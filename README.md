@@ -29,3 +29,13 @@ lib/world.ts 是纯模拟模型，lib/renderer.ts 是 Canvas 海图，lib/use-wo
 已进行 TypeScript 检查、纯模型回归、Canvas API 的内存渲染与计时、生产构建。未进行浏览器交互或截图视觉验收。
 
 提供可选 WebMCP 工具，复用同一模拟规则，并用副本完成批量操作的原子验证。当前环境未连接支持的 WebMCP 验证上下文，因此不宣称浏览器注册和执行已验证；不支持该 API 时不影响正常游玩。
+
+## GitHub Pages
+
+在线游玩：https://corzfree.github.io/chaosheng-world/
+
+推送 main 分支后，GitHub Actions 会检查类型、运行模型测试，并自动发布纯静态版本。Pages 的发布来源选择 GitHub Actions。
+
+本地使用 npm run build:pages 构建，产物为 dist/client。脚本仅开启本次构建的静态模式；原有 npm run build 仍为 Sites / Worker 构建。可通过 NEXT_PUBLIC_BASE_PATH 和 PAGES_ORIGIN 指定仓库目录及站点域名。
+
+每个域名有独立的浏览器存档。从原站点迁移时，先导出 JSON 海图，再在 GitHub Pages 中导入。

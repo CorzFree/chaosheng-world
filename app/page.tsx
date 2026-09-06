@@ -58,6 +58,7 @@ import {
 import { useWorld, formatTime } from '@/lib/use-world';
 import { DISCOVERIES, type Weather } from '@/lib/world';
 import { registerWorldTools } from '@/lib/webmcp';
+import { assetPath } from '@/lib/paths';
 const TOOLS = [
   {
     id: 'look',
@@ -122,7 +123,7 @@ export default function Home() {
   return (
     <main className="app-shell">
       <header className="masthead">
-        <a className="brand" href="/" aria-label="潮生首页">
+        <a className="brand" href={assetPath('/')} aria-label="潮生首页">
           <span className="brand-mark">
             <Waves />
           </span>
@@ -302,7 +303,7 @@ export default function Home() {
           </div>
           <div className="journal-image">
             <img
-              src="/archipelago.webp"
+              src={assetPath('/archipelago.webp')}
               alt="蓝色暮光中的群岛，灯塔和小屋亮起暖灯"
               width={1536}
               height={1024}
