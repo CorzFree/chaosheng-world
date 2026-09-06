@@ -1,48 +1,29 @@
 'use client';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
-  Building2,
-  Hand,
-  Home,
-  BriefcaseBusiness,
-  Warehouse,
-  Trees,
-  Route,
-  Layers,
-  TrainFront,
-  Volume2,
-  VolumeX,
-  Sun,
-  Moon,
-  CloudRain,
-  CloudFog,
-  Pause,
-  Play,
-  RotateCw,
-  ScanEye,
-  Minus,
-  Plus,
-  Undo2,
-  Redo2,
-  Download,
-  Upload,
-  Camera,
-  BookOpen,
-  ArrowUpRight,
-  ChevronRight,
-  MapPin,
-  Zap,
-  Droplets,
-  Globe2,
-  Construction,
   Compass,
-  Footprints,
-  ArrowUp,
-  ArrowDown,
+  Globe2,
+  Search,
+  ArrowUpRight,
+  ArrowLeft,
+  ArrowRight,
+  ChevronDown,
+  Heart,
+  MapPin,
+  Maximize2,
+  Minimize2,
+  RotateCw,
+  Plus,
+  Minus,
+  Camera,
+  Info,
+  BookOpen,
+  Shuffle,
+  X,
+  Map,
+  Loader2,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Slider } from '@/components/ui/slider';
-import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import {
   Dialog,
   DialogContent,
@@ -50,627 +31,509 @@ import {
   DialogDescription,
 } from '@/components/ui/dialog';
 import {
-  AlertDialog,
-  AlertDialogContent,
-  AlertDialogTitle,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogCancel,
-  AlertDialogAction,
-} from '@/components/ui/alert-dialog';
-import { useWorld, formatTime } from '@/lib/use-world';
+  NativeSelect,
+  NativeSelectOption,
+} from '@/components/ui/native-select';
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
+import TravelGlobe from '@/components/travel-globe';
 import {
-  isCity,
-  ZONES,
-  housingCapacity,
-  jobCapacity,
-  type CityTool,
-} from '@/lib/city';
+  PLACES,
+  REGIONS,
+  filterPlaces,
+  getPlace,
+  mapsSearch,
+} from '@/lib/travel';
+import { useTravel } from '@/lib/use-travel';
 import { assetPath } from '@/lib/paths';
-import { registerCityTools } from '@/lib/city-tools';
-const tools = [
-  { id: 'inspect', name: '观察', Icon: Hand },
-  { id: 'residential', name: '住宅', Icon: Home },
-  { id: 'commercial', name: '商务', Icon: BriefcaseBusiness },
-  { id: 'mixed', name: '混合', Icon: Building2 },
-  { id: 'industrial', name: '工业', Icon: Warehouse },
-  { id: 'park', name: '公园', Icon: Trees },
-  { id: 'road', name: '修路', Icon: Route },
-] as const;
-const integer = (n: number | undefined) =>
-  n === undefined ? '—' : Math.round(n).toLocaleString('zh-CN');
-const percent = (n: number | undefined) =>
-  n === undefined ? '—' : Math.round(n * 100) + '%';
-export default function CityPage() {
-  const c = useWorld(),
-    s = c.snapshot,
-    m = s?.city,
-    w = c.world.current;
-  const [guide, setGuide] = useState(false),
-    [archive, setArchive] = useState(false),
-    [reset, setReset] = useState(false);
-  const file = useRef<HTMLInputElement>(null);
-  useEffect(
-    () => c.setModal(guide || archive || reset),
-    [guide, archive, reset],
+import { registerTravelTools } from '@/lib/travel-tools';
+export default function TravelPage() {
+  const c = useTravel(),
+    p = c.active;
+  useEffect(() => registerTravelTools(c), []);
+  const [query, setQuery] = useState(''),
+    [region, setRegion] = useState('all'),
+    [category, setCategory] = useState('all');
+  const filtered = filterPlaces(query, region, category).filter(
+    (place) => category !== 'saved' || c.memory.saved.includes(place.id),
   );
-  useEffect(() => registerCityTools(c), []);
-  const parcel =
-      isCity(w) && c.selectedCityId !== null
-        ? w.city.parcels[c.selectedCityId]
-        : null,
-    h = s?.hour ?? 9.1;
-  const load = m ? m.powerDemand / Math.max(1, m.powerSupply) : 0,
-    waterLoad = m ? m.waterDemand / Math.max(1, m.waterSupply) : 0;
   return (
-    <main className="city-app">
-      <header className="city-header">
-        <div className="city-brand">
-          <span>
-            <Building2 size={27} />
-          </span>
-          <div>
-            <h1>荒岛上的纽约</h1>
-            <p>NEW YORK / ON AN ISLAND</p>
+    <main className={'travel-app ' + (c.immersive ? 'immersive' : '')}>
+      <div
+        className={'travel-stage ' + (c.isStreet ? 'is-street' : '')}
+        style={{
+          backgroundImage: p.preview
+            ? 'url("' + assetPath(p.preview) + '")'
+            : undefined,
+        }}
+      >
+        <canvas
+          ref={c.canvas}
+          className={c.isStreet || c.fallback ? 'hidden-viewer' : ''}
+          tabIndex={0}
+          aria-label="真实360度全景。拖动环顾，滚轮缩放，方向键改变视角。"
+        />
+        {c.fallback && !c.isStreet && (
+          <div className="travel-flat">
+            <img src={assetPath(p.image!)} alt={p.place + '的真实完整全景'} />
+            <span>平面全景 · 可横向滚动</span>
           </div>
-        </div>
-        <div className="city-context">
-          <span className="city-live-dot" />
-          新曼哈顿 <i /> 海岛城市实验
-        </div>
-        <div className="city-header-actions">
-          <Button
-            variant="ghost"
-            onClick={c.toggleSound}
-            aria-label={c.sound ? '关闭环境声' : '开启环境声'}
-          >
-            {c.sound ? <Volume2 /> : <VolumeX />}
-          </Button>
-          <Button
-            variant="ghost"
-            onClick={() => setGuide(true)}
-            aria-label="城市指南"
-          >
-            <BookOpen />
-          </Button>
-          <Button
-            variant="outline"
-            className="city-save"
-            onClick={() => setArchive(true)}
-          >
-            <Download />
-            保存世界
-          </Button>
-        </div>
-      </header>
-      <div className="city-workspace">
-        <section className="city-stage" aria-label="可交互的海岛大都会">
-          <canvas
-            ref={c.canvas}
-            tabIndex={0}
-            style={{ cursor: c.cityTool === 'inspect' ? 'grab' : 'crosshair' }}
-            aria-label="都市画布，拖动平移，右键旋转，滚轮缩放，点击楼宇查看详情"
-            onPointerDown={c.pointerDown}
-            onPointerMove={c.pointerMove}
-            onPointerUp={c.pointerUp}
-            onPointerCancel={c.pointerCancel}
-            onPointerLeave={() => (c.view.current.pointer = null)}
-            onContextMenu={(e) => e.preventDefault()}
+        )}
+        {c.isStreet && (
+          <iframe
+            key={p.id + '-' + c.frameKey}
+            src={p.embed}
+            title={p.name + ' · Google 街景'}
+            allowFullScreen
+            allow="fullscreen"
+            referrerPolicy="strict-origin-when-cross-origin"
+            onLoad={c.frameLoaded}
           />
-          {!c.ready && (
-            <div className="city-loading">
-              <Building2 size={30} />
-              <span>城市正在醒来</span>
-            </div>
-          )}
-          <div className="city-map-title">
-            <p>THE ISLAND METROPOLIS</p>
-            <h2>一座城市，正在运转。</h2>
-          </div>
-          <div className="city-clock">
-            {h >= 19 || h < 6 ? <Moon size={17} /> : <Sun size={17} />}
-            <strong>{formatTime(h)}</strong>
-            <span>建城第 {Math.floor((m?.ageDays ?? 3650) / 365) + 1} 年</span>
-          </div>
-          <nav className="city-tools" aria-label="城市规划工具">
-            {tools.map(({ id, name, Icon }, index) => (
-              <button
-                key={id}
-                className={c.cityTool === id ? 'active' : ''}
-                aria-pressed={c.cityTool === id}
-                disabled={c.street && id !== 'inspect'}
-                onClick={() => c.chooseCity(id as CityTool)}
-                title={name + ' · ' + (index + 1)}
-              >
-                <Icon size={20} />
-                <span>{name}</span>
-              </button>
-            ))}
-          </nav>
-          <div className="city-layers">
-            <Layers size={16} />
-            <RadioGroup
-              value={c.cityOverlay}
-              disabled={!c.is3D}
-              onValueChange={(v) =>
-                c.changeCityOverlay(v as typeof c.cityOverlay)
-              }
-              aria-label="城市图层"
-              className="city-layer-options"
-            >
-              {[
-                { id: 'natural', label: '实景' },
-                { id: 'zones', label: '分区' },
-                { id: 'traffic', label: '交通' },
-                { id: 'transit', label: '地铁' },
-              ].map(({ id, label }) => (
-                <label
-                  key={id}
-                  className={c.cityOverlay === id ? 'active' : ''}
-                >
-                  <RadioGroupItem
-                    value={id}
-                    className="city-invisible-radio"
-                    aria-label={label}
-                  />
-                  {label}
-                </label>
-              ))}
-            </RadioGroup>
-          </div>
-          <div className="city-camera">
-            <Button
-              variant="ghost"
-              size="icon"
-              aria-label="缩小"
-              onClick={() => c.changeZoom(c.zoom - 0.2)}
-            >
-              <Minus />
-            </Button>
-            <button onClick={c.resetView} title="全景复位">
-              {Math.round(c.zoom * 100)}%
-            </button>
-            <Button
-              variant="ghost"
-              size="icon"
-              aria-label="放大"
-              onClick={() => c.changeZoom(c.zoom + 0.2)}
-            >
-              <Plus />
-            </Button>
-            <i />
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={c.turnCamera}
-              disabled={!c.is3D}
-              aria-label="旋转视角"
-            >
-              <RotateCw />
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={c.tiltCamera}
-              disabled={!c.is3D}
-              aria-label="改变俯仰"
-            >
-              <ScanEye />
-            </Button>
-          </div>
-          {c.is3D && (
-            <div className="city-street">
-              <Button variant="ghost" onClick={c.toggleStreet}>
-                <Footprints size={16} />
-                {c.street ? '返回鸟瞰' : '街道视角'}
-              </Button>
-              {c.street && (
-                <>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => c.walkStreet(1)}
-                    aria-label="沿街前进"
-                  >
-                    <ArrowUp />
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => c.walkStreet(-1)}
-                    aria-label="沿街后退"
-                  >
-                    <ArrowDown />
-                  </Button>
-                </>
-              )}
-            </div>
-          )}
-          <div className="city-undo">
-            <Button
-              variant="ghost"
-              size="icon"
-              disabled={!c.canUndo}
-              onClick={c.undo}
-              aria-label="撤回"
-            >
-              <Undo2 />
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              disabled={!c.canRedo}
-              onClick={c.redo}
-              aria-label="重做"
-            >
-              <Redo2 />
-            </Button>
-          </div>
-          <div className="city-map-footer">
-            <span>
-              <Compass size={15} />
-              北大西洋 · 虚构海岛
-            </span>
-            <p>
-              {c.street
-                ? '拖动环顾 · W / S 沿街移动'
-                : c.cityTool === 'inspect'
-                  ? '拖动平移 · 右键旋转 · 点击楼宇'
-                  : c.cityTool === 'road'
-                    ? '沿道路或桥梁点击，接通路网'
-                    : '点击地块调整分区，建设需要道路与水电'}
-            </p>
-            <span>{c.is3D ? '立体城市' : '平面兼容视图'}</span>
-          </div>
-        </section>
-        <aside className="city-panel">
-          <div className="city-panel-heading">
-            <span>CITY OBSERVATORY</span>
-            <span className="city-live-dot" />
-          </div>
-          <div className="city-population">
-            <p>常住人口</p>
-            <strong>{integer(m?.population)}</strong>
-            <span>
-              <Building2 size={14} />
-              {integer(m?.buildings)} 栋建筑 <i /> {integer(m?.construction)}{' '}
-              处在建
-            </span>
-          </div>
-          <div className="city-stat-grid">
-            <div>
-              <span>住房容量</span>
-              <strong>{integer(m?.housing)}</strong>
-            </div>
-            <div>
-              <span>已就业</span>
-              <strong>{integer(m?.employed)}</strong>
-            </div>
-            <div>
-              <span>可提供岗位</span>
-              <strong>{integer(m?.jobs)}</strong>
-            </div>
-            <div>
-              <span>就业率</span>
-              <strong>{percent(m?.employment)}</strong>
-            </div>
-          </div>
-          <div className="city-section-title">
-            <h3>城市生命线</h3>
-            <span>沿路网供应</span>
-          </div>
-          <div className="city-service">
-            <div>
-              <span>
-                <Zap size={15} />
-                电力
-              </span>
-              <strong>
-                {m && m.powerRate < 0.995
-                  ? '部分区域缺电'
-                  : percent(load) + ' 负荷'}
-              </strong>
-            </div>
-            <div className="city-meter">
-              <i style={{ width: Math.min(100, load * 100) + '%' }} />
-            </div>
-            <p>
-              {m
-                ? (m.powerDemand / 1000).toFixed(1) +
-                  ' / ' +
-                  (m.powerSupply / 1000).toFixed(1) +
-                  ' MW'
-                : '—'}
-            </p>
-          </div>
-          <div className="city-service">
-            <div>
-              <span>
-                <Droplets size={15} />
-                供水
-              </span>
-              <strong>
-                {m && m.waterRate < 0.995
-                  ? '部分区域缺水'
-                  : percent(waterLoad) + ' 负荷'}
-              </strong>
-            </div>
-            <div className="city-meter water">
-              <i style={{ width: Math.min(100, waterLoad * 100) + '%' }} />
-            </div>
-            <p>
-              {integer(m?.waterDemand)} / {integer(m?.waterSupply)} m³ / 日
-            </p>
-          </div>
-          <div className="city-mobility">
-            <div>
-              <span>平均通勤</span>
-              <strong>
-                {m ? m.commuteMinutes.toFixed(1) : '—'}
-                <small> 分钟</small>
-              </strong>
-            </div>
-            <div>
-              <span>地铁分担</span>
-              <strong>{percent(m?.metroShare)}</strong>
-            </div>
-            <button onClick={c.toggleMetro} aria-pressed={m?.metro ?? false}>
-              <TrainFront size={17} />
-              {m?.metro ? '暂停地铁' : m?.metroBuilt ? '恢复地铁' : '开通地铁'}
-              <ChevronRight size={15} />
-            </button>
-            <button
-              onClick={c.toggleBridge}
-              aria-pressed={m?.bridgeOpen ?? false}
-            >
-              <Route size={17} />
-              {m?.bridgeOpen ? '封闭东桥' : '接通东桥'}
-              <ChevronRight size={15} />
-            </button>
-          </div>
-          {parcel ? (
-            <section className="city-parcel">
-              <div>
-                <span>
-                  <MapPin size={14} />
-                  地块 {String(parcel.id).padStart(3, '0')}
-                </span>
-                <button
-                  onClick={() => c.selectCity(null)}
-                  aria-label="关闭地块详情"
-                >
-                  ×
-                </button>
-              </div>
-              <h3>{ZONES[parcel.zone].name}</h3>
-              <p>
-                {parcel.floors} 层已建 · {parcel.plannedFloors} 层规划
-              </p>
-              <dl>
-                <dt>实际居民</dt>
-                <dd>{integer(parcel.residents)}</dd>
-                <dt>住房容量</dt>
-                <dd>{integer(housingCapacity(parcel))}</dd>
-                <dt>岗位容量</dt>
-                <dd>{integer(jobCapacity(parcel))}</dd>
-              </dl>
-              <span className="city-parcel-note">
-                选择左侧工具，再点击地块改建。
-              </span>
-            </section>
-          ) : (
-            <div className="city-concept">
-              <img
-                src={assetPath('/island-metropolis.webp')}
-                alt="高密度海岛城市的概念航拍：摩天楼、中央公园、桥梁与港口"
-                width={1536}
-                height={1024}
-              />
-              <span>海岛都会 · 概念影像</span>
-            </div>
-          )}
-          <RadioGroup
-            className="city-weather"
-            aria-label="城市天气"
-            value={s?.weather ?? 'clear'}
-            onValueChange={(v) =>
-              c.changeWeather(v as 'clear' | 'rain' | 'mist')
-            }
-          >
-            {[
-              { id: 'clear', label: '晴日', Icon: Sun },
-              { id: 'rain', label: '降雨', Icon: CloudRain },
-              { id: 'mist', label: '海雾', Icon: CloudFog },
-            ].map(({ id, label, Icon }) => (
-              <label key={id} className={s?.weather === id ? 'active' : ''}>
-                <RadioGroupItem
-                  value={id}
-                  className="city-invisible-radio"
-                  aria-label={label}
-                />
-                <Icon size={15} />
-                {label}
-              </label>
-            ))}
-          </RadioGroup>
-          <div className="city-section-title">
-            <h3>城市纪事</h3>
-            <span>最新变化</span>
-          </div>
-          <div className="city-log">
-            {(s?.logs ?? []).slice(0, 3).map((entry) => (
-              <p key={entry.id}>
-                <time>{formatTime(entry.hour)}</time>
-                {entry.text}
-              </p>
-            ))}
-          </div>
-          <p className="city-feedback" role="status" aria-live="polite">
-            {c.message}
-          </p>
-        </aside>
+        )}
+        {!c.isStreet && <div className="travel-shade" />}
       </div>
-      <footer className="city-footer">
-        <div className="city-simulation">
-          <Button
-            variant="ghost"
-            size="icon"
-            aria-label={c.paused ? '继续模拟' : '暂停模拟'}
-            onClick={c.togglePause}
+      <header className="travel-header">
+        <a href={assetPath('/')} className="travel-brand">
+          <Compass size={28} />
+          <span>
+            远方<small>实景旅行</small>
+          </span>
+        </a>
+        <nav aria-label="旅行导航">
+          <button
+            className="destination-button"
+            onClick={() => c.setAtlas(true)}
           >
-            {c.paused ? <Play /> : <Pause />}
-          </Button>
-          <span>{c.paused ? '时间已暂停' : '城市运行中'}</span>
-          <RadioGroup
-            aria-label="模拟速度"
-            className="city-speed"
-            value={String(c.speed)}
-            onValueChange={(v) => c.changeSpeed(Number(v))}
+            <Globe2 size={17} />
+            选择目的地
+            <ChevronDown size={14} />
+          </button>
+          <button onClick={() => c.setJournal(true)}>
+            <BookOpen size={17} />
+            <span>旅行足迹</span>
+          </button>
+          <button onClick={() => c.setHelp(true)} aria-label="旅行指南">
+            <Info size={18} />
+          </button>
+        </nav>
+      </header>
+      {c.immersive && (
+        <button className="leave-immersive" onClick={c.toggleImmersive}>
+          <Minimize2 size={18} />
+          退出沉浸
+        </button>
+      )}
+      <section className="travel-place" aria-label="当前目的地">
+        <div className="travel-eyebrow">
+          <MapPin size={13} />
+          {p.country}
+          <span>·</span>
+          {REGIONS[p.region]}
+        </div>
+        <h1>{p.name}</h1>
+        <p className="travel-place-name">
+          {c.isStreet ? '起点 · ' + p.place : p.place}
+        </p>
+        <p className="travel-line">{p.line}</p>
+        <div className="travel-place-actions">
+          <button onClick={c.toggleSaved} aria-pressed={c.saved}>
+            <Heart size={16} fill={c.saved ? 'currentColor' : 'none'} />
+            {c.saved ? '已收藏' : '想再来一次'}
+          </button>
+          <button onClick={c.postcard} disabled={c.isStreet || !!c.loading}>
+            <Camera size={16} />
+            留张明信片
+          </button>
+        </div>
+      </section>
+      <div className="travel-view-controls">
+        {!c.isStreet && (
+          <>
+            <button
+              onClick={c.toggleAuto}
+              aria-pressed={c.auto}
+              disabled={c.fallback}
+            >
+              <RotateCw size={16} />
+              {c.auto ? '停止环顾' : '慢慢环顾'}
+            </button>
+            <span className="control-divider" />
+            <button
+              aria-label="缩小"
+              onClick={() => c.zoom(7)}
+              disabled={c.fallback}
+            >
+              <Minus size={17} />
+            </button>
+            <span className="travel-zoom">
+              {Math.round((76 / c.pose.fov) * 100)}%
+            </span>
+            <button
+              aria-label="放大"
+              onClick={() => c.zoom(-7)}
+              disabled={c.fallback}
+            >
+              <Plus size={17} />
+            </button>
+            <span className="control-divider" />
+          </>
+        )}
+        <button aria-label="沉浸观看" onClick={c.toggleImmersive}>
+          <Maximize2 size={17} />
+        </button>
+      </div>
+      {c.loading && getPlace(c.loading)?.mode === 'panorama' && (
+        <div className="travel-loading" role="status">
+          <Loader2 size={18} className="travel-spinner" />
+          正在前往 {getPlace(c.loading)?.name}…
+        </div>
+      )}
+      {c.error && (
+        <div className="travel-notice" role="alert">
+          <p>{c.error}</p>
+          <button onClick={c.retry}>重试</button>
+          <button onClick={() => c.setAtlas(true)}>换个地方</button>
+        </div>
+      )}
+      {c.frameSlow && (
+        <div className="travel-notice">
+          <p>Google 街景仍在加载，也可以在原站继续。</p>
+          <a href={p.source} target="_blank" rel="noreferrer">
+            打开 Google 地图 <ArrowUpRight size={14} />
+          </a>
+          <button onClick={c.retryFrame}>重试</button>
+        </div>
+      )}
+      <div className="travel-attribution">
+        <span>
+          {c.isStreet
+            ? p.navigable
+              ? '可沿道路漫游'
+              : 'Google 实拍全景'
+            : '360°实拍全景 · 静态摄影'}
+        </span>
+        {!c.isStreet && (
+          <a
+            className="panorama-author"
+            href={p.source}
+            target="_blank"
+            rel="noreferrer"
           >
-            {[1, 3, 8].map((n) => (
-              <label key={n} className={c.speed === n ? 'active' : ''}>
-                <RadioGroupItem
-                  value={String(n)}
-                  className="city-invisible-radio"
-                  aria-label={n + '倍速'}
+            {p.photographer} · {p.license}
+          </a>
+        )}
+        <button onClick={() => c.setCredits(true)}>
+          影像来源 <Info size={12} />
+        </button>
+        {c.isStreet && (
+          <a href={p.source} target="_blank" rel="noreferrer">
+            在 Google 地图打开 <ArrowUpRight size={12} />
+          </a>
+        )}
+      </div>
+      <footer className="travel-footer">
+        <div className="travel-footer-heading">
+          <span>下一站，随心一点。</span>
+          <div>
+            <button onClick={c.surprise}>
+              <Shuffle size={14} />
+              随便去一个地方
+            </button>
+            <button aria-label="上一处目的地" onClick={() => c.nextPlace(-1)}>
+              <ArrowLeft size={17} />
+            </button>
+            <button aria-label="下一处目的地" onClick={() => c.nextPlace(1)}>
+              <ArrowRight size={17} />
+            </button>
+          </div>
+        </div>
+        <div className="travel-filmstrip">
+          {PLACES.map((place) => (
+            <button
+              key={place.id}
+              className={'travel-film ' + (p.id === place.id ? 'active' : '')}
+              onClick={() => void c.travelTo(place)}
+              aria-current={p.id === place.id ? 'location' : undefined}
+            >
+              {place.preview ? (
+                <img
+                  src={assetPath(place.preview)}
+                  alt={place.place}
+                  loading="lazy"
                 />
-                {n}×
-              </label>
-            ))}
-          </RadioGroup>
-        </div>
-        <div className="city-time">
-          <Sun size={14} />
-          <Slider
-            aria-label="城市时间"
-            min={0}
-            max={23.99}
-            step={0.1}
-            value={[h]}
-            onValueChange={(v) => c.seekTime(Array.isArray(v) ? v[0] : v)}
-            onValueCommitted={c.save}
-          />
-          <Moon size={14} />
-        </div>
-        <div className="city-growth">
-          <Button variant="outline" onClick={c.advanceQuarter}>
-            <Construction size={16} />
-            推进 90 天
-          </Button>
-          <Button variant="ghost" onClick={() => setReset(true)}>
-            <Globe2 size={16} />
-            开拓荒岛
-          </Button>
+              ) : (
+                <Globe2 size={28} />
+              )}
+              <span>
+                <strong>{place.name}</strong>
+                <small>
+                  {place.country} · {place.mode === 'street' ? '街景' : '全景'}
+                </small>
+              </span>
+              {c.memory.saved.includes(place.id) && (
+                <Heart size={12} className="film-heart" fill="currentColor" />
+              )}
+            </button>
+          ))}
         </div>
       </footer>
-      <Dialog open={guide} onOpenChange={setGuide}>
-        <DialogContent className="city-dialog">
-          <DialogTitle>荒岛上的纽约</DialogTitle>
+      {c.message && (
+        <div className="travel-message" role="status" aria-live="polite">
+          {c.message}
+          <button aria-label="收起提示" onClick={() => c.setMessage('')}>
+            <X size={12} />
+          </button>
+        </div>
+      )}
+      <Dialog open={c.atlas} onOpenChange={c.setAtlas}>
+        <DialogContent className="travel-dialog atlas-dialog">
+          <DialogTitle>今天，想去哪里？</DialogTitle>
           <DialogDescription>
-            这座城市的规模来自实际街区、建筑和交通连接。你可以观察，也可以规划它的下一步。
+            选一个地方，慢慢看。这里有 {PLACES.length}{' '}
+            处真实影像，遍布六个大洲。
           </DialogDescription>
-          <div className="city-guide">
+          <div className="travel-search">
+            <Search size={18} />
+            <input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              maxLength={100}
+              placeholder="搜索城市、国家，或山海…"
+              aria-label="搜索目的地"
+            />
+          </div>
+          <div className="travel-filters">
+            <button
+              className={category === 'all' ? 'active' : ''}
+              onClick={() => setCategory('all')}
+            >
+              全部
+            </button>
+            {['城市', '水边', '山野', '安静', '人文', 'street', 'saved'].map(
+              (kind) => (
+                <button
+                  key={kind}
+                  className={category === kind ? 'active' : ''}
+                  onClick={() => setCategory(kind)}
+                >
+                  {kind === 'street'
+                    ? '沿街漫游'
+                    : kind === 'saved'
+                      ? '我的收藏'
+                      : kind}
+                </button>
+              ),
+            )}
+          </div>
+          <div className="travel-region-filter">
+            <label htmlFor="travel-region">大洲</label>
+            <NativeSelect
+              id="travel-region"
+              value={region}
+              onChange={(e) => setRegion(e.target.value)}
+            >
+              <NativeSelectOption value="all">全世界</NativeSelectOption>
+              {Object.entries(REGIONS).map(([key, value]) => (
+                <NativeSelectOption key={key} value={key}>
+                  {value}
+                </NativeSelectOption>
+              ))}
+            </NativeSelect>
+          </div>
+          <Tabs defaultValue="list" className="atlas-tabs">
+            <TabsList>
+              <TabsTrigger value="list">目的地</TabsTrigger>
+              <TabsTrigger value="earth">转动地球</TabsTrigger>
+            </TabsList>
+            <TabsContent value="earth">
+              <TravelGlobe
+                active={p}
+                onChoose={(place) => void c.travelTo(place)}
+              />
+            </TabsContent>
+            <TabsContent value="list">
+              <div className="travel-destination-grid">
+                {filtered.map((place) => (
+                  <button key={place.id} onClick={() => void c.travelTo(place)}>
+                    {place.preview ? (
+                      <img
+                        src={assetPath(place.preview)}
+                        alt={place.place}
+                        loading="lazy"
+                      />
+                    ) : (
+                      <div className="travel-no-photo">
+                        <Globe2 size={44} />
+                      </div>
+                    )}
+                    <div>
+                      <span>
+                        {place.country}
+                        <small>
+                          {place.mode === 'street'
+                            ? place.navigable
+                              ? '街景漫游'
+                              : '实拍全景'
+                            : '360°全景'}
+                        </small>
+                      </span>
+                      <strong>{place.name}</strong>
+                      <p>{place.place}</p>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </TabsContent>
+          </Tabs>
+          {!filtered.length && (
+            <div className="travel-empty">
+              <Compass size={30} />
+              <p>这里还没有这个目的地，可以去 Google 地图继续找。</p>
+            </div>
+          )}
+          <a
+            className="travel-search-elsewhere"
+            href={mapsSearch(query || '世界旅游景点')}
+            target="_blank"
+            rel="noreferrer"
+          >
+            <Map size={16} />
+            寻找更多地方{query ? '：' + query : ''}
+            <ArrowUpRight size={15} />
+          </a>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={c.journal} onOpenChange={c.setJournal}>
+        <DialogContent className="travel-dialog journal-dialog">
+          <DialogTitle>留在心里的地方</DialogTitle>
+          <DialogDescription>
+            这是你的线上旅行记录，只保存在这台设备。
+          </DialogDescription>
+          <div className="travel-journal-stats">
+            <span>
+              <strong>{c.memory.visits.length}</strong>处打开过的风景
+            </span>
+            <span>
+              <strong>{c.memory.saved.length}</strong>处想再来的地方
+            </span>
+          </div>
+          <div className="travel-journal-list">
+            {c.memory.visits.length ? (
+              c.memory.visits.map((visit) => {
+                const place = getPlace(visit.id)!;
+                return (
+                  <button key={visit.id} onClick={() => void c.travelTo(place)}>
+                    {place.preview && (
+                      <img src={assetPath(place.preview)} alt="" />
+                    )}
+                    <span>
+                      <strong>{place.name}</strong>
+                      <small>
+                        {place.country} ·{' '}
+                        {new Date(visit.at).toLocaleDateString('zh-CN')}
+                      </small>
+                    </span>
+                    <ArrowUpRight size={16} />
+                  </button>
+                );
+              })
+            ) : (
+              <p className="travel-empty">第一站已经在等你。</p>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={c.credits} onOpenChange={c.setCredits}>
+        <DialogContent className="travel-dialog credit-dialog">
+          <DialogTitle>真实影像，从哪里来</DialogTitle>
+          <DialogDescription>
+            地点、拍摄者和拍摄时间均来自原始来源。画面不是实时直播。
+          </DialogDescription>
+          <div className="travel-credit">
+            <a
+              href={assetPath('/travel/credits.html')}
+              target="_blank"
+              rel="noreferrer"
+            >
+              全部影像署名与许可 <ArrowUpRight size={14} />
+            </a>
+            <h3>
+              {p.name} · {p.place}
+            </h3>
+            <p>影像作者／提供者：{p.photographer}</p>
             <p>
-              <strong>让世界有尺度。</strong>
-              主岛有住宅街区、两处高层核心、中央公园和货运港；桥梁将工业岛接入都市，外侧仍保留山地与森林。
+              {c.isStreet ? '起始街景拍摄时间' : '拍摄时间'}：
+              {p.taken ?? '来源未注明'}
             </p>
             <p>
-              <strong>楼层决定容量。</strong>
-              住宅提供住房，商业与混合街区提供岗位。新地块需要接通道路及水电，推进
-              90 天会完成部分楼层并安排可承载的入住。
+              {c.isStreet ? '起点坐标' : '拍摄位置'}：{p.coords[0].toFixed(5)},{' '}
+              {p.coords[1].toFixed(5)}
+            </p>
+            <a href={p.source} target="_blank" rel="noreferrer">
+              查看原始来源 <ArrowUpRight size={14} />
+            </a>
+            <a href={p.licenseUrl} target="_blank" rel="noreferrer">
+              {p.license} <ArrowUpRight size={14} />
+            </a>
+            {p.modification && (
+              <p className="travel-credit-note">
+                站内摄影仅作尺寸优化与 WebP 转换；图片内容未改写。CC BY-SA
+                图片衍生版本保留相同许可。
+              </p>
+            )}
+            {p.posterCredit && (
+              <>
+                <h4>目的地卡片摄影</h4>
+                <p>
+                  {p.posterCredit.author} · {p.posterCredit.license}
+                </p>
+                <a
+                  href={p.posterCredit.sourcePage}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  卡片照片来源
+                </a>
+                <a
+                  href={p.posterCredit.licenseUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  卡片照片许可
+                </a>
+              </>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={c.help} onOpenChange={c.setHelp}>
+        <DialogContent className="travel-dialog help-dialog">
+          <DialogTitle>把一扇窗，开向远方。</DialogTitle>
+          <DialogDescription>
+            你可以待在一个地方，也可以下一秒去到另一个大洲。
+          </DialogDescription>
+          <div className="travel-help">
+            <p>
+              <strong>360°实拍全景</strong>
+              可以拖动环顾、滚轮缩放；它是在真实拍摄点记录的完整球面照片。方向键也能调整视角。
             </p>
             <p>
-              <strong>交通有出发地与目的地。</strong>
-              通勤由住宅到工作地匹配，车辆沿对应道路行驶。高架地铁分担通勤，暂停后需求会回到地面道路。
+              <strong>街景漫游</strong>由 Google Maps
+              提供，可使用画面中的道路箭头继续移动。影像覆盖与可达路径由原平台决定。
             </p>
             <p>
-              <strong>先观察，再改变。</strong>
-              点击楼宇查看详情；分区工具作用于现有地块。有人居住的楼宇会受到住房容量保护。右键或
-              Alt 拖动可旋转，触屏用右下视角按钮。进入街道视角后，可拖动环顾，用
-              W / S 或前进后退按钮沿路移动。
+              <strong>沉浸、收藏、留念</strong>
+              隐藏界面慢慢看，收藏想再来的地方，也可以把站内摄影的一角收进明信片。
+            </p>
+            <p>
+              过去的沙盘已保留：<a href={assetPath('/metropolis/')}>海岛都市</a>{' '}
+              · <a href={assetPath('/isles/')}>原野群岛</a>。
             </p>
           </div>
-          <Button onClick={() => setGuide(false)}>
-            回到城市 <ArrowUpRight size={16} />
+          <Button onClick={() => c.setHelp(false)}>
+            去看看风景 <ArrowUpRight size={16} />
           </Button>
         </DialogContent>
       </Dialog>
-      <Dialog open={archive} onOpenChange={setArchive}>
-        <DialogContent className="city-dialog">
-          <DialogTitle>保存这个世界</DialogTitle>
-          <DialogDescription>
-            {c.saved}。都市与旧群岛使用独立存档。
-          </DialogDescription>
-          <div className="city-file-actions">
-            <Button variant="outline" onClick={c.exportWorld}>
-              <Download />
-              导出完整世界
-            </Button>
-            <Button variant="outline" onClick={() => file.current?.click()}>
-              <Upload />
-              导入世界
-            </Button>
-            <Button variant="outline" onClick={c.postcard}>
-              <Camera />
-              保存此刻画面
-            </Button>
-            <Button
-              variant="ghost"
-              onClick={() => {
-                c.save();
-                window.location.assign(assetPath('/isles/'));
-              }}
-            >
-              取回旧群岛存档
-            </Button>
-          </div>
-          <input
-            className="sr-only"
-            ref={file}
-            type="file"
-            accept=".json,application/json"
-            aria-label="选择世界存档"
-            onChange={(e) => {
-              const f = e.target.files?.[0];
-              if (f) {
-                void c.importWorld(f);
-                setArchive(false);
-              }
-              e.target.value = '';
-            }}
-          />
-        </DialogContent>
-      </Dialog>
-      <AlertDialog open={reset} onOpenChange={setReset}>
-        <AlertDialogContent className="city-dialog">
-          <AlertDialogTitle>从荒岛开始，还是进入新都会？</AlertDialogTitle>
-          <AlertDialogDescription>
-            这会替换当前都市存档。可以先导出世界；当前会话也可以撤回。
-          </AlertDialogDescription>
-          <AlertDialogFooter>
-            <AlertDialogCancel>留下</AlertDialogCancel>
-            <Button variant="outline" onClick={c.exportWorld}>
-              先导出
-            </Button>
-            <AlertDialogAction
-              onClick={() => {
-                c.newCity(true);
-                setReset(false);
-              }}
-            >
-              从荒岛开拓
-            </AlertDialogAction>
-            <AlertDialogAction
-              onClick={() => {
-                c.newCity(false);
-                setReset(false);
-              }}
-            >
-              生成都会
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </main>
   );
 }

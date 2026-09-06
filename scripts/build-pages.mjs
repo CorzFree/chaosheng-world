@@ -29,6 +29,10 @@ for (const required of [
   'index.rsc',
   'isles.html',
   'isles.rsc',
+  'metropolis.html',
+  'metropolis.rsc',
+  'travel/catalog.json',
+  'travel/credits.html',
   'island-metropolis.webp',
   'archipelago.webp',
 ]) {
@@ -44,5 +48,14 @@ copyFileSync(
   new URL('isles/index.html', output),
 );
 copyFileSync(new URL('isles.rsc', output), new URL('isles/index.rsc', output));
+mkdirSync(new URL('metropolis/', output), { recursive: true });
+copyFileSync(
+  new URL('metropolis.html', output),
+  new URL('metropolis/index.html', output),
+);
+copyFileSync(
+  new URL('metropolis.rsc', output),
+  new URL('metropolis/index.rsc', output),
+);
 writeFileSync(new URL('.nojekyll', output), '');
 console.log('GitHub Pages static files are ready in dist/client.');
