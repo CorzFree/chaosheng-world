@@ -13,6 +13,7 @@ export function useTravel() {
     pendingRef = useRef<string | null>(INITIAL.id),
     activeRef = useRef<TravelPlace>(INITIAL),
     poseTick = useRef(0),
+    poseListeners = useRef(new Set<(pose: PanoramaPose) => void>()),
     statusRef = useRef<'loading' | 'ready' | 'error'>('loading'),
     errorRef = useRef('');
   const [active, setActive] = useState<TravelPlace>(INITIAL),
@@ -64,8 +65,9 @@ export function useTravel() {
     if (viewer.current) return viewer.current;
     try {
       viewer.current = new PanoramaViewer(canvas.current!, (next) => {
+        for (const listener of poseListeners.current) listener(next);
         const now = performance.now();
-        if (now - poseTick.current > 160) {
+        if (now - poseTick.current > 80) {
           setPose(next);
           poseTick.current = now;
         }
@@ -105,13 +107,29 @@ export function useTravel() {
     }
     const renderer = ensureViewer();
     try {
-      let done = true;
+      let done = true,
+        previewCommitted = false;
+      const commitPreview = () => {
+        if (token !== sequence.current) return;
+        previewCommitted = true;
+        activeRef.current = place;
+        setActive(place);
+        pendingRef.current = null;
+        statusRef.current = 'ready';
+        setLoading(null);
+        record(place);
+      };
       if (renderer)
-        done = await renderer.load(assetPath(place.image!), {
-          yaw: place.initialYaw ?? 0,
-          pitch: place.initialPitch ?? 0,
-          fov: 76,
-        });
+        done = await renderer.load(
+          assetPath(place.image!),
+          {
+            yaw: place.initialYaw ?? 0,
+            pitch: place.initialPitch ?? 0,
+            fov: 76,
+          },
+          place.preview ? assetPath(place.preview) : undefined,
+          commitPreview,
+        );
       else
         await new Promise<void>((resolve, reject) => {
           const img = new window.Image();
@@ -125,8 +143,12 @@ export function useTravel() {
       pendingRef.current = null;
       statusRef.current = 'ready';
       setLoading(null);
-      record(place);
-      setMessage('');
+      if (!previewCommitted) record(place);
+      setMessage(
+        renderer?.quality === 'preview'
+          ? '高清细节暂未载入，仍可继续环顾这张实拍全景。'
+          : '',
+      );
     } catch {
       if (token !== sequence.current) return;
       statusRef.current = 'error';
@@ -176,6 +198,13 @@ export function useTravel() {
     const timer = setTimeout(() => setFrameSlow(true), 12000);
     return () => clearTimeout(timer);
   }, [loading, isStreet, frameKey]);
+  function subscribePose(listener: (pose: PanoramaPose) => void) {
+    poseListeners.current.add(listener);
+    if (viewer.current) listener({ ...viewer.current.pose });
+    return () => {
+      poseListeners.current.delete(listener);
+    };
+  }
   function getState() {
     const place = activeRef.current;
     return {
@@ -188,6 +217,11 @@ export function useTravel() {
       error: errorRef.current,
       view: viewer.current ? { ...viewer.current.pose } : null,
       saved: memoryRef.current.saved.includes(place.id),
+      quality: viewer.current?.quality ?? null,
+      viewport: {
+        width: canvas.current?.clientWidth ?? 1,
+        height: canvas.current?.clientHeight ?? 1,
+      },
     };
   }
   function lookAround(next: Partial<PanoramaPose>) {
@@ -312,6 +346,7 @@ export function useTravel() {
   }
   return {
     getState,
+    subscribePose,
     lookAround,
     canvas,
     active,

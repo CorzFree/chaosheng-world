@@ -116,37 +116,65 @@ export class PanoramaViewer {
     };
     this.frame = requestAnimationFrame(loop);
   }
-  async load(url: string, initial: Partial<PanoramaPose> = {}) {
+
+  quality: 'none' | 'preview' | 'full' = 'none';
+  async load(
+    url: string,
+    initial: Partial<PanoramaPose> = {},
+    preview?: string,
+    onPreview?: () => void,
+  ) {
     const sequence = ++this.sequence;
     this.download?.abort();
     const controller = new AbortController();
     this.download = controller;
-    let objectUrl = '';
-    let image: HTMLImageElement | null = null;
-    try {
-      const response = await fetch(url, { signal: controller.signal });
+    let previewReady = false,
+      timedOut = false;
+    const timeout = setTimeout(() => {
+      timedOut = true;
+      controller.abort();
+    }, 60000);
+    const current = () =>
+      !this.disposed &&
+      sequence === this.sequence &&
+      !controller.signal.aborted;
+    const decode = async (source: string) => {
+      const response = await fetch(source, { signal: controller.signal });
       if (!response.ok) throw new Error('Panorama download failed.');
       const blob = await response.blob();
-      if (this.disposed || sequence !== this.sequence) return false;
-      objectUrl = URL.createObjectURL(blob);
-      image = new window.Image();
+      if (!current()) throw new Error('Panorama superseded.');
+      const objectUrl = URL.createObjectURL(blob);
+      const image = new window.Image();
       image.decoding = 'async';
       const abortDecode = () => {
-        if (image) image.src = '';
+        image.src = '';
       };
       controller.signal.addEventListener('abort', abortDecode, { once: true });
-      image.src = objectUrl;
       try {
+        image.src = objectUrl;
         await image.decode();
+        if (!current()) {
+          image.src = '';
+          throw new Error('Panorama superseded.');
+        }
+        if (image.naturalWidth !== image.naturalHeight * 2) {
+          image.src = '';
+          throw new Error('The image is not a full spherical panorama.');
+        }
+        return image;
+      } catch (error) {
+        image.src = '';
+        throw error;
       } finally {
         controller.signal.removeEventListener('abort', abortDecode);
+        URL.revokeObjectURL(objectUrl);
       }
-      if (this.disposed || sequence !== this.sequence) {
-        image.src = '';
-        return false;
-      }
-      if (image.naturalWidth !== image.naturalHeight * 2)
-        throw new Error('The image is not a full spherical panorama.');
+    };
+    const display = (
+      image: HTMLImageElement,
+      quality: 'preview' | 'full',
+      resetPose: boolean,
+    ) => {
       const texture = new THREE.Texture(image);
       texture.colorSpace = THREE.SRGBColorSpace;
       texture.minFilter = THREE.LinearFilter;
@@ -161,24 +189,42 @@ export class PanoramaViewer {
       this.texture = texture;
       this.sphere.material.map = texture;
       this.sphere.material.needsUpdate = true;
-      this.target = { ...DEFAULT_POSE, ...initial };
-      this.pose = { ...this.target };
+      if (resetPose) {
+        this.target = { ...DEFAULT_POSE, ...initial };
+        this.pose = { ...this.target };
+      }
+      this.quality = quality;
       this.dirty = true;
       if (previous) {
         previous.dispose();
         if (previous.image instanceof HTMLImageElement) previous.image.src = '';
       }
+    };
+    try {
+      if (preview && preview !== url) {
+        try {
+          const image = await decode(preview);
+          display(image, 'preview', true);
+          previewReady = true;
+          onPreview?.();
+        } catch (error) {
+          if (!current()) throw error;
+        }
+      }
+      const image = await decode(url);
+      display(image, 'full', !previewReady);
       return true;
     } catch (error) {
       if (
-        controller.signal.aborted ||
         this.disposed ||
-        sequence !== this.sequence
+        sequence !== this.sequence ||
+        (controller.signal.aborted && !timedOut)
       )
         return false;
+      if (previewReady) return true;
       throw error;
     } finally {
-      if (objectUrl) URL.revokeObjectURL(objectUrl);
+      clearTimeout(timeout);
       if (this.download === controller) this.download = null;
     }
   }

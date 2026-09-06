@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   Compass,
   Globe2,
@@ -22,6 +22,7 @@ import {
   X,
   Map,
   Loader2,
+  Sparkles,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -46,10 +47,27 @@ import {
 import { useTravel } from '@/lib/use-travel';
 import { assetPath } from '@/lib/paths';
 import { registerTravelTools } from '@/lib/travel-tools';
+import TravelPlay from '@/components/travel-play';
+import { useExpedition } from '@/lib/use-expedition';
+import { registerExpeditionTools } from '@/lib/expedition-tools';
 export default function TravelPage() {
   const c = useTravel(),
     p = c.active;
-  useEffect(() => registerTravelTools(c), []);
+  const expedition = useExpedition(c);
+  const expeditionRef = useRef(expedition);
+  expeditionRef.current = expedition;
+  useEffect(
+    () =>
+      registerTravelTools({
+        ...c,
+        travelTo: async (...args) => {
+          expeditionRef.current.exitPlay();
+          await c.travelTo(...args);
+        },
+      }),
+    [],
+  );
+  useEffect(() => registerExpeditionTools(() => expeditionRef.current), []);
   const [query, setQuery] = useState(''),
     [region, setRegion] = useState('all'),
     [category, setCategory] = useState('all');
@@ -57,7 +75,14 @@ export default function TravelPage() {
     (place) => category !== 'saved' || c.memory.saved.includes(place.id),
   );
   return (
-    <main className={'travel-app ' + (c.immersive ? 'immersive' : '')}>
+    <main
+      className={
+        'travel-app play-mode-' +
+        expedition.mode +
+        ' ' +
+        (c.immersive ? 'immersive' : '')
+      }
+    >
       <div
         className={'travel-stage ' + (c.isStreet ? 'is-street' : '')}
         style={{
@@ -70,7 +95,11 @@ export default function TravelPage() {
           ref={c.canvas}
           className={c.isStreet || c.fallback ? 'hidden-viewer' : ''}
           tabIndex={0}
-          aria-label="真实360度全景。拖动环顾，滚轮缩放，方向键改变视角。"
+          aria-label={
+            expedition.mode === 'hunt'
+              ? '真实全景寻景。方向键环顾，Enter确认中央目标。'
+              : '真实360度全景。拖动环顾，滚轮缩放，方向键改变视角。'
+          }
         />
         {c.fallback && !c.isStreet && (
           <div className="travel-flat">
@@ -100,14 +129,32 @@ export default function TravelPage() {
         </a>
         <nav aria-label="旅行导航">
           <button
+            className="explore-menu-button"
+            onClick={() => expedition.setOpen(true)}
+          >
+            <Sparkles size={17} />
+            <span>探索玩法</span>
+          </button>
+          <button
+            className="passport-nav"
+            onClick={() => expedition.setPassport(true)}
+          >
+            <BookOpen size={17} />
+            <span>我的远方</span>
+          </button>
+          <button
             className="destination-button"
+            disabled={expedition.mode === 'quiz'}
             onClick={() => c.setAtlas(true)}
           >
             <Globe2 size={17} />
             选择目的地
             <ChevronDown size={14} />
           </button>
-          <button onClick={() => c.setJournal(true)}>
+          <button
+            className="legacy-journal-button"
+            onClick={() => c.setJournal(true)}
+          >
             <BookOpen size={17} />
             <span>旅行足迹</span>
           </button>
@@ -122,6 +169,7 @@ export default function TravelPage() {
           退出沉浸
         </button>
       )}
+      <TravelPlay travel={c} play={expedition} />
       <section className="travel-place" aria-label="当前目的地">
         <div className="travel-eyebrow">
           <MapPin size={13} />
@@ -523,6 +571,10 @@ export default function TravelPage() {
             <p>
               <strong>沉浸、收藏、留念</strong>
               隐藏界面慢慢看，收藏想再来的地方，也可以把站内摄影的一角收进明信片。
+            </p>
+            <p>
+              <strong>寻景与世界猜想</strong>
+              根据线索寻找画面中的细节，走完三站旅程；也能在五轮猜地点游戏中，把看到的风景放到地球上。进度和手记只保存在此设备。
             </p>
             <p>
               过去的沙盘已保留：<a href={assetPath('/metropolis/')}>海岛都市</a>{' '}

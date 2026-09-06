@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import './globals.css';
+import './play.css';
 import { assetPath } from '@/lib/paths';
 export const metadata: Metadata = {
   title: '远方 · 实景旅行',
