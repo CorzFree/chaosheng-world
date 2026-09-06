@@ -1,3 +1,4 @@
+import { validateCityState, type CityState } from './city.ts';
 export const WIDTH = 1440,
   HEIGHT = 960,
   CELL = 6,
@@ -46,6 +47,7 @@ export type Entry = {
   kind: 'nature' | 'life' | 'you' | 'discovery';
 };
 export type World = {
+  city?: CityState;
   version: 1;
   seed: number;
   rng: number;
@@ -663,6 +665,7 @@ export function serialize(w: World) {
 export function deserialize(text: string): World {
   if (text.length > 2_500_000) throw new Error('这份海图太大了。');
   const d = JSON.parse(text);
+  if (d?.city !== undefined) validateCityState(d.city);
   const finite = (n: unknown) => typeof n === 'number' && Number.isFinite(n);
   const validId = (n: unknown) =>
     Number.isSafeInteger(n) && (n as number) > 0 && (n as number) < 1e12;

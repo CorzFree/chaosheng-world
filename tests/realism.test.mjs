@@ -17,31 +17,8 @@ import {
   seaLevel,
 } from '../lib/world.ts';
 
-const source = readFileSync(
-  new URL('../lib/renderer3d.ts', import.meta.url),
-  'utf8',
-);
-const moduleSource = ts
-  .transpileModule(source, {
-    compilerOptions: {
-      target: ts.ScriptTarget.ES2022,
-      module: ts.ModuleKind.ESNext,
-    },
-  })
-  .outputText.replace(
-    "from 'three'",
-    "from '" +
-      new URL('../node_modules/three/build/three.module.js', import.meta.url)
-        .href +
-      "'",
-  )
-  .replace(
-    "from './world'",
-    "from '" + new URL('../lib/world.ts', import.meta.url).href + "'",
-  );
-const { createTerrainGeometry, terrainHeight, ELEVATION } = await import(
-  'data:text/javascript;base64,' + Buffer.from(moduleSource).toString('base64')
-);
+const { createTerrainGeometry, terrainHeight, ELEVATION } =
+  await import('../lib/terrain3d.ts');
 function rayHeight(mesh, x, y) {
   const ray = new THREE.Raycaster(
     new THREE.Vector3(x - WIDTH / 2, 400, y - HEIGHT / 2),

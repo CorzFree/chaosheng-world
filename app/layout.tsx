@@ -2,9 +2,9 @@ import type { Metadata } from 'next';
 import './globals.css';
 import { assetPath } from '@/lib/paths';
 export const metadata: Metadata = {
-  title: '潮生 · 一座会呼吸的群岛',
+  title: '荒岛上的纽约 · 潮生',
   description:
-    '造一座岛，种一棵树，放一盏灯。在潮汐、天气与昼夜之间，陪一个小世界慢慢生长。',
+    '在荒岛上建设一座纽约般密集的海岛大都会。观察楼宇、路网、通勤与水电如何共同组成一座城市。',
   icons: { icon: assetPath('/favicon.svg') },
 };
 export default function RootLayout({

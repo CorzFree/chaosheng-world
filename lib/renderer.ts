@@ -1,3 +1,4 @@
+import { isCity, ZONES } from './city.ts';
 import {
   WIDTH,
   HEIGHT,
@@ -25,6 +26,9 @@ export type View = {
   reducedMotion: boolean;
   yaw?: number;
   pitch?: number;
+  street?: boolean;
+  streetX?: number;
+  streetY?: number;
 };
 export class Renderer {
   readonly is3D = false;
@@ -201,6 +205,36 @@ export class Renderer {
       c.quadraticCurveTo(x - 3, y - 3, x, y);
       c.quadraticCurveTo(x + 3, y - 3, x + 7, y + flap);
       c.stroke();
+    }
+    if (isCity(w)) {
+      for (const road of w.city.roads) {
+        if (!road.enabled) continue;
+        const a = w.city.nodes[road.a],
+          b = w.city.nodes[road.b];
+        c.strokeStyle = road.bridge ? '#b4b7aa' : '#53605c';
+        c.lineWidth = road.lanes * 1.5 + 2;
+        c.beginPath();
+        c.moveTo(a.x, a.y);
+        c.lineTo(b.x, b.y);
+        c.stroke();
+      }
+      for (const p of w.city.parcels) {
+        if (p.zone === 'park') {
+          c.fillStyle = '#577750';
+        } else {
+          c.fillStyle = p.floors ? ZONES[p.zone].color : '#9b9c77';
+        }
+        c.fillRect(p.x - p.width / 2, p.y - p.depth / 2, p.width, p.depth);
+        if (p.floors > 20) {
+          c.fillStyle = '#d4d5c0';
+          c.fillRect(
+            p.x - p.width * 0.2,
+            p.y - p.depth * 0.2,
+            p.width * 0.4,
+            p.depth * 0.4,
+          );
+        }
+      }
     }
     for (const e of [...w.entities].sort((a, b) => a.y - b.y))
       this.drawEntity(e, w, t);

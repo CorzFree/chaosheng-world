@@ -1,3 +1,5 @@
+import { CityLayer, type CityOverlay } from './city-renderer.ts';
+import { isCity } from './city.ts';
 import * as THREE from 'three';
 import {
   WIDTH,
@@ -14,68 +16,8 @@ import {
 } from './world';
 import type { View } from './renderer';
 
-export const ELEVATION = 180;
-export function terrainHeight(w: World, x: number, y: number) {
-  const gx = Math.max(0, Math.min(COLS - 1, x / CELL));
-  const gy = Math.max(0, Math.min(ROWS - 1, y / CELL));
-  const ix = Math.floor(gx),
-    iy = Math.floor(gy),
-    fx = gx - ix,
-    fy = gy - iy;
-  const at = (dx: number, dy: number) =>
-    w.terrain[Math.min(ROWS - 1, iy + dy) * COLS + Math.min(COLS - 1, ix + dx)];
-  return (
-    (fx + fy <= 1
-      ? at(0, 0) + (at(1, 0) - at(0, 0)) * fx + (at(0, 1) - at(0, 0)) * fy
-      : at(1, 1) +
-        (at(0, 1) - at(1, 1)) * (1 - fx) +
-        (at(1, 0) - at(1, 1)) * (1 - fy)) * ELEVATION
-  );
-}
-export function createTerrainGeometry(w: World) {
-  const geometry = new THREE.PlaneGeometry(WIDTH, HEIGHT, COLS, ROWS);
-  geometry.rotateX(-Math.PI / 2);
-  const p = geometry.getAttribute('position');
-  for (let i = 0; i < p.count; i++)
-    p.setY(
-      i,
-      w.terrain[
-        Math.min(ROWS - 1, Math.floor(i / (COLS + 1))) * COLS +
-          Math.min(COLS - 1, i % (COLS + 1))
-      ] * ELEVATION,
-    );
-  geometry.computeVertexNormals();
-  const normal = geometry.getAttribute('normal'),
-    colors = new Float32Array(p.count * 3);
-  const sand = new THREE.Color('#bfb795'),
-    grass = new THREE.Color('#64744a'),
-    high = new THREE.Color('#556349'),
-    rock = new THREE.Color('#8a8b80');
-  const color = new THREE.Color();
-  for (let i = 0; i < p.count; i++) {
-    const h =
-        w.terrain[
-          Math.min(ROWS - 1, Math.floor(i / (COLS + 1))) * COLS +
-            Math.min(COLS - 1, i % (COLS + 1))
-        ],
-      slope = 1 - normal.getY(i);
-    color.copy(sand).lerp(grass, THREE.MathUtils.smoothstep(h, 0.085, 0.18));
-    color.lerp(high, THREE.MathUtils.smoothstep(h, 0.26, 0.6) * 0.65);
-    color.lerp(
-      rock,
-      THREE.MathUtils.smoothstep(slope, 0.16, 0.57) *
-        THREE.MathUtils.smoothstep(h, 0.1, 0.24),
-    );
-    color.multiplyScalar(
-      0.9 + hash(i % COLS, Math.floor(i / COLS), w.seed) * 0.17,
-    );
-    colors.set([color.r, color.g, color.b], i * 3);
-  }
-  geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-  geometry.computeBoundingBox();
-  geometry.computeBoundingSphere();
-  return geometry;
-}
+export { ELEVATION, terrainHeight, createTerrainGeometry } from './terrain3d';
+import { ELEVATION, terrainHeight, createTerrainGeometry } from './terrain3d';
 const waterVertex = `
 uniform float uTime;
 varying vec3 vWorld;
@@ -142,6 +84,26 @@ void main() {
 type BoatParts = { group: THREE.Group; sail: THREE.Mesh; wake: THREE.Mesh };
 export class Renderer3D {
   readonly is3D = true;
+  private cityLayer: CityLayer | null = null;
+  private cityOverlay: CityOverlay = 'natural';
+  private citySelection: number | null = null;
+  setCityOverlay(overlay: CityOverlay) {
+    this.cityOverlay = overlay;
+    this.cityLayer?.setOverlay(overlay);
+  }
+  selectCity(id: number | null) {
+    this.citySelection = id;
+    this.cityLayer?.select(id);
+  }
+  pickCity(x: number, y: number, v: View) {
+    this.updateCamera(v);
+    this.raycaster.setFromCamera(
+      new THREE.Vector2((x / v.width) * 2 - 1, 1 - (y / v.height) * 2),
+      this.camera,
+    );
+    return this.cityLayer?.pick(this.raycaster) ?? null;
+  }
+
   canvas: HTMLCanvasElement;
   gl: THREE.WebGLRenderer;
   scene = new THREE.Scene();
@@ -345,6 +307,57 @@ export class Renderer3D {
     return mesh;
   }
   private updateCamera(v: View) {
+    if (v.street && isCity(this.world)) {
+      const w = this.world,
+        x = v.streetX ?? 570,
+        z = v.streetY ?? 600;
+      let ground = terrainHeight(w, x, z);
+      for (const r of w.city.roads) {
+        if (!r.bridge || !(r.built ?? r.enabled)) continue;
+        const a = w.city.nodes[r.a],
+          b = w.city.nodes[r.b],
+          dx = b.x - a.x,
+          dz = b.y - a.y,
+          t = Math.max(
+            0,
+            Math.min(
+              1,
+              ((x - a.x) * dx + (z - a.y) * dz) / (dx * dx + dz * dz),
+            ),
+          );
+        if (Math.hypot(x - a.x - dx * t, z - a.y - dz * t) < 8)
+          ground = Math.max(
+            ground,
+            terrainHeight(w, a.x, a.y) * (1 - t) +
+              terrainHeight(w, b.x, b.y) * t +
+              Math.sin(t * Math.PI) * 3.5 +
+              1,
+          );
+      }
+      this.camera.fov = Math.max(28, Math.min(80, (62 * 1.14) / v.zoom));
+      this.camera.near = 0.4;
+      this.camera.aspect = Math.max(0.2, v.width / Math.max(1, v.height));
+      this.cameraDistance = 250;
+      this.camera.position.set(x - WIDTH / 2, ground + 1, z - HEIGHT / 2);
+      const yaw = v.yaw ?? 0,
+        pitch = v.pitch ?? 0.08;
+      this.camera.lookAt(
+        this.camera.position
+          .clone()
+          .add(
+            new THREE.Vector3(
+              Math.sin(yaw) * Math.cos(pitch),
+              Math.sin(pitch),
+              -Math.cos(yaw) * Math.cos(pitch),
+            ),
+          ),
+      );
+      this.camera.updateProjectionMatrix();
+      this.camera.updateMatrixWorld();
+      return;
+    }
+    this.camera.fov = 42;
+    this.camera.near = 1;
     const aspect = Math.max(0.2, v.width / Math.max(1, v.height)),
       span = Math.max(HEIGHT * 0.94, (WIDTH / aspect) * 1.07) / v.zoom;
     this.cameraDistance = span / (2 * Math.tan(THREE.MathUtils.degToRad(21)));
@@ -798,7 +811,11 @@ export class Renderer3D {
       w.weather === 'mist'
         ? this.cameraDistance + 1050
         : this.cameraDistance + 4200;
-    this.scene.fog = new THREE.Fog(sky, this.cameraDistance - 300, far);
+    this.scene.fog = new THREE.Fog(
+      sky,
+      v.street ? 180 : this.cameraDistance - 300,
+      far,
+    );
     this.sun.position.set(
       Math.cos(sunAngle) * 1500,
       Math.max(50, alt * 1500),
@@ -819,13 +836,26 @@ export class Renderer3D {
     u.uRain.value = w.weather === 'rain' ? 1 : 0;
     u.uSun.value.copy(this.sun.position).normalize();
     u.uSky.value.copy(sky);
-    u.uFogNear.value = this.cameraDistance - 300;
+    u.uFogNear.value = v.street ? 180 : this.cameraDistance - 300;
     u.uFogFar.value = far;
     this.updateDocks(w);
     this.updateEntities(w, t);
+    if (isCity(w)) {
+      if (!this.cityLayer) {
+        this.cityLayer = new CityLayer();
+        this.scene.add(this.cityLayer.group);
+      }
+      this.cityLayer.setOverlay(this.cityOverlay);
+      this.cityLayer.update(w, t, this.dayLight, this.citySelection);
+    } else if (this.cityLayer) {
+      this.scene.remove(this.cityLayer.group);
+      this.cityLayer.dispose();
+      this.cityLayer = null;
+    }
+
     this.rain.visible = w.weather === 'rain';
     this.rain.position.y = -((t * 110) % 260);
-    this.pointerRing.visible = !!v.pointer;
+    this.pointerRing.visible = !!v.pointer && !v.street;
     if (v.pointer) {
       const p = v.pointer;
       this.pointerRing.position.set(p.x - WIDTH / 2, 0, p.y - HEIGHT / 2);
@@ -875,6 +905,7 @@ export class Renderer3D {
     }
   }
   destroy() {
+    this.cityLayer?.dispose();
     this.overlay.remove();
     this.ground.geometry.dispose();
     this.water.geometry.dispose();

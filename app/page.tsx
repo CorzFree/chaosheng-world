@@ -1,47 +1,48 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
 import {
-  Waves,
+  Building2,
   Hand,
-  Mountain,
-  TreePine,
-  House,
-  Sailboat,
-  Flame,
-  Droplets,
-  Pause,
-  Play,
+  Home,
+  BriefcaseBusiness,
+  Warehouse,
+  Trees,
+  Route,
+  Layers,
+  TrainFront,
   Volume2,
   VolumeX,
-  BookOpen,
-  ArrowUpRight,
   Sun,
+  Moon,
   CloudRain,
   CloudFog,
-  Moon,
-  Sunrise,
-  Sunset,
+  Pause,
+  Play,
+  RotateCw,
+  ScanEye,
   Minus,
   Plus,
-  Compass,
   Undo2,
   Redo2,
-  Shuffle,
   Download,
   Upload,
   Camera,
-  X,
-  Sparkles,
-  Map,
-  ChevronDown,
-  Check,
-  RotateCw,
-  ScanEye,
+  BookOpen,
+  ArrowUpRight,
+  ChevronRight,
+  MapPin,
+  Zap,
+  Droplets,
+  Globe2,
+  Construction,
+  Compass,
+  Footprints,
+  ArrowUp,
+  ArrowDown,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Slider } from '@/components/ui/slider';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
-import { Switch } from '@/components/ui/switch';
 import {
   Dialog,
   DialogContent,
@@ -58,210 +59,166 @@ import {
   AlertDialogAction,
 } from '@/components/ui/alert-dialog';
 import { useWorld, formatTime } from '@/lib/use-world';
-import { DISCOVERIES, type Weather } from '@/lib/world';
-import { registerWorldTools } from '@/lib/webmcp';
+import {
+  isCity,
+  ZONES,
+  housingCapacity,
+  jobCapacity,
+  type CityTool,
+} from '@/lib/city';
 import { assetPath } from '@/lib/paths';
-const TOOLS = [
-  {
-    id: 'look',
-    name: '观海',
-    Icon: Hand,
-    hint: '拖动海图 · 滚轮缩放 · 右键转动视角',
-  },
-  {
-    id: 'land',
-    name: '造岛',
-    Icon: Mountain,
-    hint: '在海面按住片刻，让岛屿浮现',
-  },
-  {
-    id: 'tree',
-    name: '种树',
-    Icon: TreePine,
-    hint: '点一下陆地，种下新绿 · 拖动可种一片林',
-  },
-  { id: 'home', name: '筑屋', Icon: House, hint: '在空地上，为旅人留一扇窗' },
-  {
-    id: 'boat',
-    name: '放舟',
-    Icon: Sailboat,
-    hint: '点一下开阔海面，让小船出发',
-  },
-  {
-    id: 'lantern',
-    name: '点灯',
-    Icon: Flame,
-    hint: '点一盏小灯，留给晚来的星星',
-  },
-  {
-    id: 'water',
-    name: '引水',
-    Icon: Droplets,
-    hint: '按住拖动，让海水重新流过',
-  },
+import { registerCityTools } from '@/lib/city-tools';
+const tools = [
+  { id: 'inspect', name: '观察', Icon: Hand },
+  { id: 'residential', name: '住宅', Icon: Home },
+  { id: 'commercial', name: '商务', Icon: BriefcaseBusiness },
+  { id: 'mixed', name: '混合', Icon: Building2 },
+  { id: 'industrial', name: '工业', Icon: Warehouse },
+  { id: 'park', name: '公园', Icon: Trees },
+  { id: 'road', name: '修路', Icon: Route },
 ] as const;
-const WEATHERS = [
-  { id: 'clear', label: '晴日', Icon: Sun },
-  { id: 'rain', label: '听雨', Icon: CloudRain },
-  { id: 'mist', label: '薄雾', Icon: CloudFog },
-] as const;
-export default function Home() {
+const integer = (n: number | undefined) =>
+  n === undefined ? '—' : Math.round(n).toLocaleString('zh-CN');
+const percent = (n: number | undefined) =>
+  n === undefined ? '—' : Math.round(n * 100) + '%';
+export default function CityPage() {
   const c = useWorld(),
-    s = c.snapshot;
+    s = c.snapshot,
+    m = s?.city,
+    w = c.world.current;
   const [guide, setGuide] = useState(false),
     [archive, setArchive] = useState(false),
-    [reset, setReset] = useState(false),
-    [allLogs, setAllLogs] = useState(false),
-    [discoveries, setDiscoveries] = useState(false);
-  const importInput = useRef<HTMLInputElement>(null);
+    [reset, setReset] = useState(false);
+  const file = useRef<HTMLInputElement>(null);
   useEffect(
-    () => c.setModal(guide || archive || reset || allLogs || discoveries),
-    [guide, archive, reset, allLogs, discoveries],
+    () => c.setModal(guide || archive || reset),
+    [guide, archive, reset],
   );
-  useEffect(() => registerWorldTools(c), []);
-  const h = s?.hour ?? 8.5,
-    TimeIcon =
-      h < 5 || h >= 20 ? Moon : h < 8 ? Sunrise : h >= 17 ? Sunset : Sun;
+  useEffect(() => registerCityTools(c), []);
+  const parcel =
+      isCity(w) && c.selectedCityId !== null
+        ? w.city.parcels[c.selectedCityId]
+        : null,
+    h = s?.hour ?? 9.1;
+  const load = m ? m.powerDemand / Math.max(1, m.powerSupply) : 0,
+    waterLoad = m ? m.waterDemand / Math.max(1, m.waterSupply) : 0;
   return (
-    <main className="app-shell">
-      <header className="masthead">
-        <a className="brand" href={assetPath('/')} aria-label="潮生首页">
-          <span className="brand-mark">
-            <Waves />
+    <main className="city-app">
+      <header className="city-header">
+        <div className="city-brand">
+          <span>
+            <Building2 size={27} />
           </span>
-          <h1>
-            潮生<span>A LITTLE LIVING WORLD</span>
-          </h1>
-        </a>
-        <div className="header-note">
-          <span className="live-dot" />
-          一片海，也是一点留白
+          <div>
+            <h1>荒岛上的纽约</h1>
+            <p>NEW YORK / ON AN ISLAND</p>
+          </div>
         </div>
-        <div className="header-actions">
+        <div className="city-context">
+          <span className="city-live-dot" />
+          新曼哈顿 <i /> 海岛城市实验
+        </div>
+        <div className="city-header-actions">
           <Button
             variant="ghost"
-            className="utility"
             onClick={c.toggleSound}
-            aria-pressed={c.sound}
-            aria-label={c.sound ? '关闭海声' : '打开海声'}
+            aria-label={c.sound ? '关闭环境声' : '开启环境声'}
           >
             {c.sound ? <Volume2 /> : <VolumeX />}
-            <span>{c.sound ? '海声已开' : '听海'}</span>
           </Button>
           <Button
             variant="ghost"
-            className="utility"
             onClick={() => setGuide(true)}
-            aria-label="岛民指南"
+            aria-label="城市指南"
           >
             <BookOpen />
-            <span>岛民指南</span>
           </Button>
           <Button
             variant="outline"
-            className="utility save-button"
+            className="city-save"
             onClick={() => setArchive(true)}
-            aria-label="收好海图"
           >
             <Download />
-            <span>收好海图</span>
+            保存世界
           </Button>
         </div>
       </header>
-      <div className="workspace">
-        <section className="world-stage" aria-label="交互群岛">
-          <div className="map-heading">
-            <p>A LIVING ARCHIPELAGO</p>
-            <h2>
-              {h >= 18 || h < 6
-                ? '今夜，给星星留一盏灯。'
-                : '万物有自己的节奏。'}
-            </h2>
-          </div>
-          <div className="day-badge">
-            <TimeIcon size={17} />
-            <span>第 {s?.day ?? 1} 天</span>
-            <i />
-            <span>{formatTime(h)}</span>
-          </div>
+      <div className="city-workspace">
+        <section className="city-stage" aria-label="可交互的海岛大都会">
           <canvas
             ref={c.canvas}
-            style={{ cursor: c.tool === 'look' ? 'grab' : 'crosshair' }}
             tabIndex={0}
-            aria-label="潮生群岛画布。数字一到七选工具，方向键移动光标，回车使用工具，空格暂停。可拖动和双指缩放。"
+            style={{ cursor: c.cityTool === 'inspect' ? 'grab' : 'crosshair' }}
+            aria-label="都市画布，拖动平移，右键旋转，滚轮缩放，点击楼宇查看详情"
             onPointerDown={c.pointerDown}
             onPointerMove={c.pointerMove}
             onPointerUp={c.pointerUp}
             onPointerCancel={c.pointerCancel}
-            onPointerLeave={() => {
-              c.view.current.pointer = null;
-            }}
+            onPointerLeave={() => (c.view.current.pointer = null)}
             onContextMenu={(e) => e.preventDefault()}
           />
-          {!c.ready && <div className="canvas-loading">海风将至……</div>}
-          <nav className="tool-dock" aria-label="创造工具">
-            {TOOLS.map(({ id, name, Icon }, i) => (
+          {!c.ready && (
+            <div className="city-loading">
+              <Building2 size={30} />
+              <span>城市正在醒来</span>
+            </div>
+          )}
+          <div className="city-map-title">
+            <p>THE ISLAND METROPOLIS</p>
+            <h2>一座城市，正在运转。</h2>
+          </div>
+          <div className="city-clock">
+            {h >= 19 || h < 6 ? <Moon size={17} /> : <Sun size={17} />}
+            <strong>{formatTime(h)}</strong>
+            <span>建城第 {Math.floor((m?.ageDays ?? 3650) / 365) + 1} 年</span>
+          </div>
+          <nav className="city-tools" aria-label="城市规划工具">
+            {tools.map(({ id, name, Icon }, index) => (
               <button
                 key={id}
-                className={'tool-button ' + (c.tool === id ? 'selected' : '')}
-                aria-pressed={c.tool === id}
-                onClick={() => c.choose(id)}
-                title={name + ' · ' + (i + 1)}
+                className={c.cityTool === id ? 'active' : ''}
+                aria-pressed={c.cityTool === id}
+                disabled={c.street && id !== 'inspect'}
+                onClick={() => c.chooseCity(id as CityTool)}
+                title={name + ' · ' + (index + 1)}
               >
-                <Icon size={21} />
+                <Icon size={20} />
                 <span>{name}</span>
               </button>
             ))}
           </nav>
-          {['land', 'water'].includes(c.tool) && (
-            <div className="brush-panel">
-              <div>
-                <span>笔触大小</span>
-                <span>
-                  {c.radius < 40
-                    ? '轻一点'
-                    : c.radius > 70
-                      ? '铺开来'
-                      : '刚刚好'}
-                </span>
-              </div>
-              <Slider
-                aria-label="笔触大小"
-                min={20}
-                max={95}
-                step={5}
-                value={[c.radius]}
-                onValueChange={(v) => c.setBrush(Array.isArray(v) ? v[0] : v)}
-              />
-            </div>
-          )}
-          {c.is3D && (
-            <div className="camera-controls">
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={c.turnCamera}
-                aria-label="转动视角"
-                title="转动视角"
-              >
-                <RotateCw />
-              </Button>
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={c.tiltCamera}
-                aria-label="改变俯仰"
-                title="改变俯仰"
-              >
-                <ScanEye />
-              </Button>
-            </div>
-          )}
-          <div className="map-compass">
-            <Compass size={39} />
-            <span>N</span>
+          <div className="city-layers">
+            <Layers size={16} />
+            <RadioGroup
+              value={c.cityOverlay}
+              disabled={!c.is3D}
+              onValueChange={(v) =>
+                c.changeCityOverlay(v as typeof c.cityOverlay)
+              }
+              aria-label="城市图层"
+              className="city-layer-options"
+            >
+              {[
+                { id: 'natural', label: '实景' },
+                { id: 'zones', label: '分区' },
+                { id: 'traffic', label: '交通' },
+                { id: 'transit', label: '地铁' },
+              ].map(({ id, label }) => (
+                <label
+                  key={id}
+                  className={c.cityOverlay === id ? 'active' : ''}
+                >
+                  <RadioGroupItem
+                    value={id}
+                    className="city-invisible-radio"
+                    aria-label={label}
+                  />
+                  {label}
+                </label>
+              ))}
+            </RadioGroup>
           </div>
-          <div className="zoom-control">
+          <div className="city-camera">
             <Button
               variant="ghost"
               size="icon"
@@ -270,7 +227,7 @@ export default function Home() {
             >
               <Minus />
             </Button>
-            <button onClick={c.resetView} aria-label="复位视角">
+            <button onClick={c.resetView} title="全景复位">
               {Math.round(c.zoom * 100)}%
             </button>
             <Button
@@ -281,15 +238,61 @@ export default function Home() {
             >
               <Plus />
             </Button>
+            <i />
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={c.turnCamera}
+              disabled={!c.is3D}
+              aria-label="旋转视角"
+            >
+              <RotateCw />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={c.tiltCamera}
+              disabled={!c.is3D}
+              aria-label="改变俯仰"
+            >
+              <ScanEye />
+            </Button>
           </div>
-          <div className="map-history">
+          {c.is3D && (
+            <div className="city-street">
+              <Button variant="ghost" onClick={c.toggleStreet}>
+                <Footprints size={16} />
+                {c.street ? '返回鸟瞰' : '街道视角'}
+              </Button>
+              {c.street && (
+                <>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => c.walkStreet(1)}
+                    aria-label="沿街前进"
+                  >
+                    <ArrowUp />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => c.walkStreet(-1)}
+                    aria-label="沿街后退"
+                  >
+                    <ArrowDown />
+                  </Button>
+                </>
+              )}
+            </div>
+          )}
+          <div className="city-undo">
             <Button
               variant="ghost"
               size="icon"
               disabled={!c.canUndo}
               onClick={c.undo}
-              aria-label="撤回上一步"
-              title="撤回 · Ctrl Z"
+              aria-label="撤回"
             >
               <Undo2 />
             </Button>
@@ -299,182 +302,236 @@ export default function Home() {
               disabled={!c.canRedo}
               onClick={c.redo}
               aria-label="重做"
-              title="重做 · Ctrl Shift Z"
             >
               <Redo2 />
             </Button>
           </div>
-          <div className="map-bottom">
+          <div className="city-map-footer">
             <span>
-              <span className="live-dot" />{' '}
-              {c.paused ? '时间停在这里' : '世界正在呼吸'}
+              <Compass size={15} />
+              北大西洋 · 虚构海岛
             </span>
-            <p>{TOOLS.find((t) => t.id === c.tool)?.hint}</p>
-            <span className="map-scale">0 ━━━ 100 步</span>
+            <p>
+              {c.street
+                ? '拖动环顾 · W / S 沿街移动'
+                : c.cityTool === 'inspect'
+                  ? '拖动平移 · 右键旋转 · 点击楼宇'
+                  : c.cityTool === 'road'
+                    ? '沿道路或桥梁点击，接通路网'
+                    : '点击地块调整分区，建设需要道路与水电'}
+            </p>
+            <span>{c.is3D ? '立体城市' : '平面兼容视图'}</span>
           </div>
         </section>
-        <aside className="journal" aria-label="群岛手记">
-          <div className="journal-top">
-            <div>
-              <p className="eyebrow">
-                FIELD NOTES / {String(s?.day ?? 1).padStart(3, '0')}
-              </p>
-              <h2>
-                群岛手记<span>✳</span>
-              </h2>
-            </div>
-            <span className="small-label">此刻，在这里</span>
+        <aside className="city-panel">
+          <div className="city-panel-heading">
+            <span>CITY OBSERVATORY</span>
+            <span className="city-live-dot" />
           </div>
-          <div className="journal-image">
-            <img
-              src={assetPath('/archipelago.webp')}
-              alt="蓝色暮光中的群岛，灯塔和小屋亮起暖灯"
-              width={1536}
-              height={1024}
-            />
-            <span>风从海上来</span>
-          </div>
-          <div className="world-stats">
-            <div>
-              <strong>{String(s?.islands ?? '—').padStart(2, '0')}</strong>
-              <span>座岛屿</span>
-            </div>
-            <div>
-              <strong>{s?.trees ?? '—'}</strong>
-              <span>棵树木</span>
-            </div>
-            <div>
-              <strong>{String(s?.homes ?? '—').padStart(2, '0')}</strong>
-              <span>户人家</span>
-            </div>
-          </div>
-          <div className="section-label">
-            <span>海上的天气</span>
+          <div className="city-population">
+            <p>常住人口</p>
+            <strong>{integer(m?.population)}</strong>
             <span>
-              {s?.tide ?? '潮水往复'} · {s?.boats ?? 0} 叶舟
+              <Building2 size={14} />
+              {integer(m?.buildings)} 栋建筑 <i /> {integer(m?.construction)}{' '}
+              处在建
             </span>
           </div>
+          <div className="city-stat-grid">
+            <div>
+              <span>住房容量</span>
+              <strong>{integer(m?.housing)}</strong>
+            </div>
+            <div>
+              <span>已就业</span>
+              <strong>{integer(m?.employed)}</strong>
+            </div>
+            <div>
+              <span>可提供岗位</span>
+              <strong>{integer(m?.jobs)}</strong>
+            </div>
+            <div>
+              <span>就业率</span>
+              <strong>{percent(m?.employment)}</strong>
+            </div>
+          </div>
+          <div className="city-section-title">
+            <h3>城市生命线</h3>
+            <span>沿路网供应</span>
+          </div>
+          <div className="city-service">
+            <div>
+              <span>
+                <Zap size={15} />
+                电力
+              </span>
+              <strong>
+                {m && m.powerRate < 0.995
+                  ? '部分区域缺电'
+                  : percent(load) + ' 负荷'}
+              </strong>
+            </div>
+            <div className="city-meter">
+              <i style={{ width: Math.min(100, load * 100) + '%' }} />
+            </div>
+            <p>
+              {m
+                ? (m.powerDemand / 1000).toFixed(1) +
+                  ' / ' +
+                  (m.powerSupply / 1000).toFixed(1) +
+                  ' MW'
+                : '—'}
+            </p>
+          </div>
+          <div className="city-service">
+            <div>
+              <span>
+                <Droplets size={15} />
+                供水
+              </span>
+              <strong>
+                {m && m.waterRate < 0.995
+                  ? '部分区域缺水'
+                  : percent(waterLoad) + ' 负荷'}
+              </strong>
+            </div>
+            <div className="city-meter water">
+              <i style={{ width: Math.min(100, waterLoad * 100) + '%' }} />
+            </div>
+            <p>
+              {integer(m?.waterDemand)} / {integer(m?.waterSupply)} m³ / 日
+            </p>
+          </div>
+          <div className="city-mobility">
+            <div>
+              <span>平均通勤</span>
+              <strong>
+                {m ? m.commuteMinutes.toFixed(1) : '—'}
+                <small> 分钟</small>
+              </strong>
+            </div>
+            <div>
+              <span>地铁分担</span>
+              <strong>{percent(m?.metroShare)}</strong>
+            </div>
+            <button onClick={c.toggleMetro} aria-pressed={m?.metro ?? false}>
+              <TrainFront size={17} />
+              {m?.metro ? '暂停地铁' : m?.metroBuilt ? '恢复地铁' : '开通地铁'}
+              <ChevronRight size={15} />
+            </button>
+            <button
+              onClick={c.toggleBridge}
+              aria-pressed={m?.bridgeOpen ?? false}
+            >
+              <Route size={17} />
+              {m?.bridgeOpen ? '封闭东桥' : '接通东桥'}
+              <ChevronRight size={15} />
+            </button>
+          </div>
+          {parcel ? (
+            <section className="city-parcel">
+              <div>
+                <span>
+                  <MapPin size={14} />
+                  地块 {String(parcel.id).padStart(3, '0')}
+                </span>
+                <button
+                  onClick={() => c.selectCity(null)}
+                  aria-label="关闭地块详情"
+                >
+                  ×
+                </button>
+              </div>
+              <h3>{ZONES[parcel.zone].name}</h3>
+              <p>
+                {parcel.floors} 层已建 · {parcel.plannedFloors} 层规划
+              </p>
+              <dl>
+                <dt>实际居民</dt>
+                <dd>{integer(parcel.residents)}</dd>
+                <dt>住房容量</dt>
+                <dd>{integer(housingCapacity(parcel))}</dd>
+                <dt>岗位容量</dt>
+                <dd>{integer(jobCapacity(parcel))}</dd>
+              </dl>
+              <span className="city-parcel-note">
+                选择左侧工具，再点击地块改建。
+              </span>
+            </section>
+          ) : (
+            <div className="city-concept">
+              <img
+                src={assetPath('/island-metropolis.webp')}
+                alt="高密度海岛城市的概念航拍：摩天楼、中央公园、桥梁与港口"
+                width={1536}
+                height={1024}
+              />
+              <span>海岛都会 · 概念影像</span>
+            </div>
+          )}
           <RadioGroup
-            aria-label="海上的天气"
+            className="city-weather"
+            aria-label="城市天气"
             value={s?.weather ?? 'clear'}
-            onValueChange={(v) => c.changeWeather(v as Weather)}
-            className="weather-control"
+            onValueChange={(v) =>
+              c.changeWeather(v as 'clear' | 'rain' | 'mist')
+            }
           >
-            {WEATHERS.map(({ id, label, Icon }) => (
-              <label
-                key={id}
-                className={
-                  (s?.weather ?? 'clear') === id
-                    ? 'weather-option active'
-                    : 'weather-option'
-                }
-              >
+            {[
+              { id: 'clear', label: '晴日', Icon: Sun },
+              { id: 'rain', label: '降雨', Icon: CloudRain },
+              { id: 'mist', label: '海雾', Icon: CloudFog },
+            ].map(({ id, label, Icon }) => (
+              <label key={id} className={s?.weather === id ? 'active' : ''}>
                 <RadioGroupItem
                   value={id}
-                  className="weather-radio"
+                  className="city-invisible-radio"
                   aria-label={label}
                 />
-                <Icon size={17} />
-                <span>{label}</span>
+                <Icon size={15} />
+                {label}
               </label>
             ))}
           </RadioGroup>
-          <div className="dayline">
-            <div>
-              <Sunrise size={14} />
-              <span>拨动天色</span>
-              <Moon size={14} />
-            </div>
-            <Slider
-              aria-label="一天中的时间"
-              min={0}
-              max={23.99}
-              step={0.1}
-              value={[h]}
-              onValueChange={(v) => c.seekTime(Array.isArray(v) ? v[0] : v)}
-              onValueCommitted={c.save}
-            />
+          <div className="city-section-title">
+            <h3>城市纪事</h3>
+            <span>最新变化</span>
           </div>
-          {c.selection && (
-            <section className="observed">
-              <div>
-                <h3>{c.selection.title}</h3>
-                <button
-                  aria-label="收起观察"
-                  onClick={() => c.setSelection(null)}
-                >
-                  <X size={15} />
-                </button>
-              </div>
-              <p>{c.selection.detail}</p>
-            </section>
-          )}
-          <div className="section-label log-heading">
-            <span>正在发生</span>
-            <button onClick={() => setAllLogs(true)}>
-              翻阅手记 <ArrowUpRight size={13} />
-            </button>
-          </div>
-          <div className="recent-logs">
+          <div className="city-log">
             {(s?.logs ?? []).slice(0, 3).map((entry) => (
-              <div
-                key={entry.id}
-                className={
-                  'log-entry ' +
-                  (entry.kind === 'discovery' ? 'discovery-log' : '')
-                }
-              >
-                <time>
-                  第 {entry.day} 天 · {formatTime(entry.hour)}
-                </time>
-                <p>{entry.text}</p>
-              </div>
+              <p key={entry.id}>
+                <time>{formatTime(entry.hour)}</time>
+                {entry.text}
+              </p>
             ))}
           </div>
-          <div className="quiet-note" role="status" aria-live="polite">
+          <p className="city-feedback" role="status" aria-live="polite">
             {c.message}
-          </div>
-          <div className="journal-footer">
-            <button onClick={() => setDiscoveries(true)}>
-              <Sparkles size={14} />
-              {s?.discoveries.length
-                ? '拾得 ' + s.discoveries.length + ' 个小发现'
-                : '海里藏着一些小发现'}
-              <ArrowUpRight size={14} />
-            </button>
-          </div>
+          </p>
         </aside>
       </div>
-      <footer className="app-footer">
-        <div className="save-status">
-          <span className="footer-dot" />
-          {c.saved}
-        </div>
-        <div className="time-controls">
+      <footer className="city-footer">
+        <div className="city-simulation">
           <Button
             variant="ghost"
             size="icon"
+            aria-label={c.paused ? '继续模拟' : '暂停模拟'}
             onClick={c.togglePause}
-            aria-label={c.paused ? '继续时间' : '暂停时间'}
           >
             {c.paused ? <Play /> : <Pause />}
           </Button>
+          <span>{c.paused ? '时间已暂停' : '城市运行中'}</span>
           <RadioGroup
-            aria-label="时间流速"
+            aria-label="模拟速度"
+            className="city-speed"
             value={String(c.speed)}
             onValueChange={(v) => c.changeSpeed(Number(v))}
-            className="speed-control"
           >
             {[1, 3, 8].map((n) => (
-              <label
-                key={n}
-                className={
-                  c.speed === n ? 'speed-option active' : 'speed-option'
-                }
-              >
+              <label key={n} className={c.speed === n ? 'active' : ''}>
                 <RadioGroupItem
                   value={String(n)}
-                  className="weather-radio"
+                  className="city-invisible-radio"
                   aria-label={n + '倍速'}
                 />
                 {n}×
@@ -482,90 +539,97 @@ export default function Home() {
             ))}
           </RadioGroup>
         </div>
-        <button className="new-world" onClick={() => setReset(true)}>
-          <Shuffle size={14} />
-          换一片海
-        </button>
+        <div className="city-time">
+          <Sun size={14} />
+          <Slider
+            aria-label="城市时间"
+            min={0}
+            max={23.99}
+            step={0.1}
+            value={[h]}
+            onValueChange={(v) => c.seekTime(Array.isArray(v) ? v[0] : v)}
+            onValueCommitted={c.save}
+          />
+          <Moon size={14} />
+        </div>
+        <div className="city-growth">
+          <Button variant="outline" onClick={c.advanceQuarter}>
+            <Construction size={16} />
+            推进 90 天
+          </Button>
+          <Button variant="ghost" onClick={() => setReset(true)}>
+            <Globe2 size={16} />
+            开拓荒岛
+          </Button>
+        </div>
       </footer>
       <Dialog open={guide} onOpenChange={setGuide}>
-        <DialogContent className="world-dialog">
-          <DialogTitle className="dialog-title">给自己一片海。</DialogTitle>
-          <DialogDescription className="dialog-intro">
-            这里没有分数，也没有需要赶上的进度。你可以创造，也可以只是陪它待一会儿。
+        <DialogContent className="city-dialog">
+          <DialogTitle>荒岛上的纽约</DialogTitle>
+          <DialogDescription>
+            这座城市的规模来自实际街区、建筑和交通连接。你可以观察，也可以规划它的下一步。
           </DialogDescription>
-          <div className="guide-grid">
-            {TOOLS.slice(1).map(({ id, name, Icon, hint }) => (
-              <div key={id}>
-                <Icon size={22} />
-                <div>
-                  <h3>{name}</h3>
-                  <p>{hint.replace(' · 拖动可种一片林', '')}。</p>
-                </div>
-              </div>
-            ))}
-          </div>
-          <div className="guide-note">
+          <div className="city-guide">
             <p>
-              一个昼夜约 6 分 40
-              秒。树在雨中长得更快。岛民会去海岸、树荫或邻居家，雨天沿路回屋；小船在码头间往返，靠岸后收帆。拨动天色，可以随时看看夜晚。
+              <strong>让世界有尺度。</strong>
+              主岛有住宅街区、两处高层核心、中央公园和货运港；桥梁将工业岛接入都市，外侧仍保留山地与森林。
             </p>
             <p>
-              拖动海图、滚轮或双指缩放。选择工具后按住 Shift 可以临时拖图。数字
-              1–7 换工具，画布聚焦时用方向键移动光标、回车落笔、空格暂停。Ctrl /
-              ⌘ Z 撤回。
+              <strong>楼层决定容量。</strong>
+              住宅提供住房，商业与混合街区提供岗位。新地块需要接通道路及水电，推进
+              90 天会完成部分楼层并安排可承载的入住。
+            </p>
+            <p>
+              <strong>交通有出发地与目的地。</strong>
+              通勤由住宅到工作地匹配，车辆沿对应道路行驶。高架地铁分担通勤，暂停后需求会回到地面道路。
+            </p>
+            <p>
+              <strong>先观察，再改变。</strong>
+              点击楼宇查看详情；分区工具作用于现有地块。有人居住的楼宇会受到住房容量保护。右键或
+              Alt 拖动可旋转，触屏用右下视角按钮。进入街道视角后，可拖动环顾，用
+              W / S 或前进后退按钮沿路移动。
             </p>
           </div>
-          <div className="label-switch">
-            <label htmlFor="map-labels">显示岛屿名字</label>
-            <Switch
-              id="map-labels"
-              checked={c.labels}
-              onCheckedChange={c.setMapLabels}
-            />
-          </div>
-          <Button className="dialog-primary" onClick={() => setGuide(false)}>
-            去海边待一会儿 <ArrowUpRight size={16} />
+          <Button onClick={() => setGuide(false)}>
+            回到城市 <ArrowUpRight size={16} />
           </Button>
         </DialogContent>
       </Dialog>
       <Dialog open={archive} onOpenChange={setArchive}>
-        <DialogContent className="world-dialog archive-dialog">
-          <DialogTitle className="dialog-title">收好这一片海</DialogTitle>
-          <DialogDescription className="dialog-intro">
-            世界会自动留在这台设备的浏览器中。导出海图，可以备份或带到另一台设备继续。
+        <DialogContent className="city-dialog">
+          <DialogTitle>保存这个世界</DialogTitle>
+          <DialogDescription>
+            {c.saved}。都市与旧群岛使用独立存档。
           </DialogDescription>
-          <div className="archive-options">
-            <button onClick={c.exportWorld}>
+          <div className="city-file-actions">
+            <Button variant="outline" onClick={c.exportWorld}>
               <Download />
-              <span>
-                <strong>带走海图</strong>
-                <small>完整世界存档 · JSON</small>
-              </span>
-              <ArrowUpRight />
-            </button>
-            <button onClick={() => importInput.current?.click()}>
+              导出完整世界
+            </Button>
+            <Button variant="outline" onClick={() => file.current?.click()}>
               <Upload />
-              <span>
-                <strong>带回一片海</strong>
-                <small>打开以前导出的海图</small>
-              </span>
-              <ArrowUpRight />
-            </button>
-            <button onClick={c.postcard}>
+              导入世界
+            </Button>
+            <Button variant="outline" onClick={c.postcard}>
               <Camera />
-              <span>
-                <strong>寄给自己一张明信片</strong>
-                <small>留下此刻的海面 · PNG</small>
-              </span>
-              <ArrowUpRight />
-            </button>
+              保存此刻画面
+            </Button>
+            <Button
+              variant="ghost"
+              onClick={() => {
+                c.save();
+                window.location.assign(assetPath('/isles/'));
+              }}
+            >
+              取回旧群岛存档
+            </Button>
           </div>
           <input
-            ref={importInput}
+            className="sr-only"
+            ref={file}
             type="file"
             accept=".json,application/json"
-            className="sr-only"
-            aria-label="选择潮生海图文件"
+            aria-label="选择世界存档"
             onChange={(e) => {
               const f = e.target.files?.[0];
               if (f) {
@@ -575,84 +639,34 @@ export default function Home() {
               e.target.value = '';
             }}
           />
-          <p className="archive-footnote">
-            海图编号 {s?.seed} · 第 {s?.day} 天<br />
-            关闭网页时，群岛也会休息。
-          </p>
-        </DialogContent>
-      </Dialog>
-      <Dialog open={allLogs} onOpenChange={setAllLogs}>
-        <DialogContent className="world-dialog">
-          <DialogTitle className="dialog-title">潮水留下的手记</DialogTitle>
-          <DialogDescription className="dialog-intro">
-            记住最近八十件小事。
-          </DialogDescription>
-          <div className="full-logs">
-            {(s?.logs ?? []).map((entry) => (
-              <div
-                key={entry.id}
-                className={
-                  'log-entry ' +
-                  (entry.kind === 'discovery' ? 'discovery-log' : '')
-                }
-              >
-                <time>
-                  第 {entry.day} 天 · {formatTime(entry.hour)}
-                </time>
-                <p>{entry.text}</p>
-              </div>
-            ))}
-          </div>
-        </DialogContent>
-      </Dialog>
-      <Dialog open={discoveries} onOpenChange={setDiscoveries}>
-        <DialogContent className="world-dialog">
-          <DialogTitle className="dialog-title">偶然拾得</DialogTitle>
-          <DialogDescription className="dialog-intro">
-            陪一个世界待久了，总会看见一些小小的事。
-          </DialogDescription>
-          {s?.discoveries.length ? (
-            <div className="discovery-grid">
-              {s.discoveries.map((id) => (
-                <div key={id}>
-                  <span className="discovery-seal">
-                    <Sparkles />
-                  </span>
-                  <h3>{DISCOVERIES[id]?.title}</h3>
-                  <p>{DISCOVERIES[id]?.description}</p>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="empty-discoveries">
-              <Waves size={36} />
-              <p>
-                先种一棵树，或造一座小岛。
-                <br />
-                有些发现，要等到雨来或天黑。
-              </p>
-            </div>
-          )}
         </DialogContent>
       </Dialog>
       <AlertDialog open={reset} onOpenChange={setReset}>
-        <AlertDialogContent className="reset-dialog">
-          <AlertDialogTitle>去看看另一片海？</AlertDialogTitle>
+        <AlertDialogContent className="city-dialog">
+          <AlertDialogTitle>从荒岛开始，还是进入新都会？</AlertDialogTitle>
           <AlertDialogDescription>
-            将生成一片新的群岛，并替换这台设备上的自动存档。你也可以先收好现在的海图；新世界仍可撤回。
+            这会替换当前都市存档。可以先导出世界；当前会话也可以撤回。
           </AlertDialogDescription>
           <AlertDialogFooter>
-            <AlertDialogCancel>再待一会儿</AlertDialogCancel>
+            <AlertDialogCancel>留下</AlertDialogCancel>
             <Button variant="outline" onClick={c.exportWorld}>
-              先带走海图
+              先导出
             </Button>
             <AlertDialogAction
               onClick={() => {
-                c.newWorld();
+                c.newCity(true);
                 setReset(false);
               }}
             >
-              出发
+              从荒岛开拓
+            </AlertDialogAction>
+            <AlertDialogAction
+              onClick={() => {
+                c.newCity(false);
+                setReset(false);
+              }}
+            >
+              生成都会
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
