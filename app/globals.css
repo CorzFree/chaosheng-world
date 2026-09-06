@@ -1477,3 +1477,38 @@ button svg {
     width: 155px;
   }
 }
+
+.camera-controls {
+  position: absolute;
+  right: 22px;
+  bottom: 155px;
+  z-index: 3;
+  display: flex;
+  gap: 3px;
+  border: 1px solid #acc9b438;
+  border-radius: 9px;
+  background: #163d4399;
+  color: #e5ebd5;
+  backdrop-filter: blur(8px);
+}
+.camera-controls button {
+  width: 35px;
+  height: 35px;
+}
+.camera-controls button:hover {
+  background: #bfd3bc20;
+}
+@media (max-width: 760px) {
+  .camera-controls {
+    right: 14px;
+    bottom: 174px;
+  }
+  .map-heading h2 {
+    color: #f2f0df;
+    text-shadow: 0 1px 6px #15343666;
+  }
+  .map-heading p {
+    color: #e5eadd;
+    text-shadow: 0 1px 4px #15343666;
+  }
+}

@@ -23,8 +23,18 @@ export type View = {
   radius: number;
   labels: boolean;
   reducedMotion: boolean;
+  yaw?: number;
+  pitch?: number;
 };
 export class Renderer {
+  readonly is3D = false;
+  destroy() {}
+  pan(dx: number, dy: number, v: View) {
+    const s = this.scale(v);
+    v.x += dx / s;
+    v.y += dy / s;
+  }
+
   canvas: HTMLCanvasElement;
   ctx: CanvasRenderingContext2D;
   terrain: HTMLCanvasElement;

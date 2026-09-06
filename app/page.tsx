@@ -35,6 +35,8 @@ import {
   Map,
   ChevronDown,
   Check,
+  RotateCw,
+  ScanEye,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Slider } from '@/components/ui/slider';
@@ -64,7 +66,7 @@ const TOOLS = [
     id: 'look',
     name: '观海',
     Icon: Hand,
-    hint: '拖动海图 · 滚轮缩放 · 轻点万物',
+    hint: '拖动海图 · 滚轮缩放 · 右键转动视角',
   },
   {
     id: 'land',
@@ -169,7 +171,7 @@ export default function Home() {
       <div className="workspace">
         <section className="world-stage" aria-label="交互群岛">
           <div className="map-heading">
-            <p>THE QUIET ARCHIPELAGO</p>
+            <p>A LIVING ARCHIPELAGO</p>
             <h2>
               {h >= 18 || h < 6
                 ? '今夜，给星星留一盏灯。'
@@ -231,6 +233,28 @@ export default function Home() {
                 value={[c.radius]}
                 onValueChange={(v) => c.setBrush(Array.isArray(v) ? v[0] : v)}
               />
+            </div>
+          )}
+          {c.is3D && (
+            <div className="camera-controls">
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={c.turnCamera}
+                aria-label="转动视角"
+                title="转动视角"
+              >
+                <RotateCw />
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={c.tiltCamera}
+                aria-label="改变俯仰"
+                title="改变俯仰"
+              >
+                <ScanEye />
+              </Button>
             </div>
           )}
           <div className="map-compass">
@@ -483,7 +507,7 @@ export default function Home() {
           <div className="guide-note">
             <p>
               一个昼夜约 6 分 40
-              秒。树在雨中长得更快，岛民会散步或回屋避雨，小船会绕开海岸。拨动天色，可以随时看看夜晚。
+              秒。树在雨中长得更快。岛民会去海岸、树荫或邻居家，雨天沿路回屋；小船在码头间往返，靠岸后收帆。拨动天色，可以随时看看夜晚。
             </p>
             <p>
               拖动海图、滚轮或双指缩放。选择工具后按住 Shift 可以临时拖图。数字

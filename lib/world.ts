@@ -23,6 +23,13 @@ export type Entity = {
   targetX: number;
   targetY: number;
   rest: number;
+  activity?: 'walking' | 'resting' | 'indoors' | 'sailing' | 'moored';
+  purpose?: 'shore' | 'shade' | 'visit' | 'home';
+  schedule?: 'shore' | 'shade' | 'visit' | 'home';
+  goalX?: number;
+  goalY?: number;
+  motion?: number;
+  destination?: number;
 };
 export type Island = {
   name: string;
@@ -513,7 +520,14 @@ function step(w: World, dt: number) {
       log(w, '天亮了，海面先接住第一束光。');
       discover(w, 'dawn');
     }
-    if (currentHour === 18) log(w, '暮色慢慢靠岸，小屋亮起了灯。', 'life');
+    if (currentHour === 18)
+      log(
+        w,
+        w.entities.some((e) => e.kind === 'home')
+          ? '暮色慢慢靠岸，小屋亮起了灯。'
+          : '暮色慢慢靠岸。',
+        'life',
+      );
     if (currentHour === 0) log(w, '夜深了，潮水还醒着。');
   }
   if (w.weather !== 'clear') {
@@ -534,36 +548,7 @@ function step(w: World, dt: number) {
         discover(w, 'rain');
       }
     }
-    if (e.kind === 'home') {
-      if (night || w.weather === 'rain') {
-        const dx = e.x - e.targetX,
-          dy = e.y + 5 - e.targetY,
-          d = Math.hypot(dx, dy);
-        if (d > 1) {
-          e.targetX += (dx / Math.max(d, 1)) * Math.min(d, dt * 8);
-          e.targetY += (dy / Math.max(d, 1)) * Math.min(d, dt * 8);
-        }
-      } else if (e.rest > 0) e.rest = Math.max(0, e.rest - dt);
-      else {
-        const nx = e.targetX + Math.cos(e.angle) * dt * 6,
-          ny = e.targetY + Math.sin(e.angle) * dt * 6;
-        if (heightAt(w, nx, ny) > 0.12 && Math.hypot(nx - e.x, ny - e.y) < 48) {
-          e.targetX = nx;
-          e.targetY = ny;
-        } else {
-          e.angle += 1.5 + random(w) * 2;
-          e.rest = 2 + random(w) * 5;
-        }
-        if (random(w) < dt * 0.035) {
-          e.angle += random(w) * 2 - 1;
-          e.rest = 3 + random(w) * 5;
-        }
-      }
-      if (heightAt(w, e.targetX, e.targetY) < 0.11) {
-        e.targetX = e.x;
-        e.targetY = e.y + 4;
-      }
-    }
+    if (e.kind === 'home') stepResident(w, e, night, dt);
     if (e.kind === 'boat') {
       if (heightAt(w, e.x, e.y) > tide - 0.015) {
         const p = waterSpot(w, e.x, e.y);
@@ -575,6 +560,8 @@ function step(w: World, dt: number) {
         }
         continue;
       }
+      if (stepVoyage(w, e, dt)) continue;
+      e.motion = e.rest > 0 ? 0 : 7;
       if (e.rest > 0) {
         e.rest = Math.max(0, e.rest - dt);
         continue;
@@ -733,6 +720,35 @@ export function deserialize(text: string): World {
     )
       throw new Error('海图中的居民记录有些模糊，请换一份存档。');
   }
+  for (const e of d.entities) {
+    if (
+      e.goalX !== undefined &&
+      (!finite(e.goalX) || e.goalX < 0 || e.goalX >= WIDTH)
+    )
+      delete e.goalX;
+    if (
+      e.goalY !== undefined &&
+      (!finite(e.goalY) || e.goalY < 0 || e.goalY >= HEIGHT)
+    )
+      delete e.goalY;
+    if (
+      !['walking', 'resting', 'indoors', 'sailing', 'moored'].includes(
+        e.activity,
+      )
+    )
+      delete e.activity;
+    if (!['shore', 'shade', 'visit', 'home'].includes(e.purpose))
+      delete e.purpose;
+    if (!['shore', 'shade', 'visit', 'home'].includes(e.schedule))
+      delete e.schedule;
+    if (
+      e.motion !== undefined &&
+      (!finite(e.motion) || e.motion < 0 || e.motion > 20)
+    )
+      delete e.motion;
+    if (e.destination !== undefined && !validId(e.destination))
+      delete e.destination;
+  }
   const ids = d.entities.map((e: Entity) => e.id);
   if (new Set(ids).size !== ids.length) throw new Error('海图里有重复的记录。');
   const w: World = {
@@ -799,4 +815,431 @@ export function deserialize(text: string): World {
   findIslands(w);
   reconcile(w);
   return w;
+}
+
+type RoutePoint = { x: number; y: number };
+export type Harbor = {
+  homeId: number;
+  x: number;
+  y: number;
+  landX: number;
+  landY: number;
+};
+const routeCache = new WeakMap<
+  World,
+  Map<
+    number,
+    { revision: number; goal: string; points: RoutePoint[]; index: number }
+  >
+>();
+const harborCache = new WeakMap<
+  World,
+  { signature: string; harbors: Harbor[] }
+>();
+export function getHarbors(w: World): Harbor[] {
+  const homes = w.entities.filter((e) => e.kind === 'home'),
+    signature = w.revision + ':' + homes.map((e) => e.id).join(',');
+  const previous = harborCache.get(w);
+  if (previous?.signature === signature) return previous.harbors;
+  const harbors: Harbor[] = [];
+  for (const home of homes) {
+    let berth: RoutePoint | null = null;
+    for (let r = 20; r <= 320 && !berth; r += 10)
+      for (let i = 0; i < 36; i++) {
+        const a = (i / 36) * Math.PI * 2,
+          x = home.x + Math.cos(a) * r,
+          y = home.y + Math.sin(a) * r;
+        if (x < 18 || y < 18 || x > WIDTH - 18 || y > HEIGHT - 18) continue;
+        if (
+          heightAt(w, x, y) < -0.005 &&
+          heightAt(w, x - 5, y) < 0.005 &&
+          heightAt(w, x + 5, y) < 0.005
+        ) {
+          berth = { x, y };
+          break;
+        }
+      }
+    if (berth) {
+      const dx = home.x - berth.x,
+        dy = home.y - berth.y,
+        d = Math.hypot(dx, dy);
+      let land: RoutePoint | null = null;
+      for (let n = 5; n < Math.min(d, 70); n += 3) {
+        const x = berth.x + (dx / d) * n,
+          y = berth.y + (dy / d) * n;
+        if (heightAt(w, x, y) > 0.09) {
+          land = { x, y };
+          break;
+        }
+      }
+      if (land)
+        harbors.push({
+          homeId: home.id,
+          ...berth,
+          landX: land.x,
+          landY: land.y,
+        });
+    }
+  }
+  harborCache.set(w, { signature, harbors });
+  return harbors;
+}
+export function findRoute(
+  w: World,
+  start: RoutePoint,
+  goal: RoutePoint,
+  mode: 'land' | 'water',
+): RoutePoint[] {
+  const pass = (x: number, y: number) =>
+    x >= 0 &&
+    y >= 0 &&
+    x < COLS &&
+    y < ROWS &&
+    (mode === 'land'
+      ? w.terrain[y * COLS + x] > 0.105
+      : w.terrain[y * COLS + x] < seaLevel(w) - 0.025);
+  const sx = Math.floor(start.x / CELL),
+    sy = Math.floor(start.y / CELL),
+    gx = Math.floor(goal.x / CELL),
+    gy = Math.floor(goal.y / CELL);
+  if (!pass(sx, sy) || !pass(gx, gy)) return [];
+  const first = sy * COLS + sx,
+    last = gy * COLS + gx;
+  if (first === last) return [goal];
+  const score = new Float32Array(COLS * ROWS);
+  score.fill(Infinity);
+  const parent = new Int32Array(COLS * ROWS);
+  parent.fill(-1);
+  const visited = new Uint8Array(COLS * ROWS),
+    heap: { node: number; priority: number }[] = [];
+  const push = (value: { node: number; priority: number }) => {
+    heap.push(value);
+    let i = heap.length - 1;
+    while (i > 0) {
+      const p = (i - 1) >> 1;
+      if (heap[p].priority <= value.priority) break;
+      heap[i] = heap[p];
+      i = p;
+    }
+    heap[i] = value;
+  };
+  const pop = () => {
+    const best = heap[0],
+      tail = heap.pop()!;
+    if (heap.length) {
+      let i = 0;
+      while (true) {
+        let c = i * 2 + 1;
+        if (c >= heap.length) break;
+        if (c + 1 < heap.length && heap[c + 1].priority < heap[c].priority) c++;
+        if (heap[c].priority >= tail.priority) break;
+        heap[i] = heap[c];
+        i = c;
+      }
+      heap[i] = tail;
+    }
+    return best;
+  };
+  score[first] = 0;
+  push({ node: first, priority: 0 });
+  let expanded = 0;
+  while (heap.length && expanded++ < 9500) {
+    const current = pop().node;
+    if (visited[current]) continue;
+    visited[current] = 1;
+    if (current === last) {
+      const route: RoutePoint[] = [];
+      let n = last;
+      while (n !== first && n >= 0) {
+        route.push({
+          x: ((n % COLS) + 0.5) * CELL,
+          y: (Math.floor(n / COLS) + 0.5) * CELL,
+        });
+        n = parent[n];
+      }
+      route.reverse();
+      route.push(goal);
+      return route;
+    }
+    const x = current % COLS,
+      y = Math.floor(current / COLS);
+    for (const [dx, dy] of [
+      [1, 0],
+      [-1, 0],
+      [0, 1],
+      [0, -1],
+      [1, 1],
+      [1, -1],
+      [-1, 1],
+      [-1, -1],
+    ]) {
+      const nx = x + dx,
+        ny = y + dy;
+      if (!pass(nx, ny) || (dx && dy && (!pass(nx, y) || !pass(x, ny))))
+        continue;
+      const next = ny * COLS + nx;
+      if (visited[next]) continue;
+      const slope = Math.abs(w.terrain[next] - w.terrain[current]);
+      if (mode === 'land' && slope > 0.09) continue;
+      const cost =
+        score[current] +
+        (dx && dy ? Math.SQRT2 : 1) * (mode === 'land' ? 1 + slope * 15 : 1);
+      if (cost >= score[next]) continue;
+      score[next] = cost;
+      parent[next] = current;
+      push({ node: next, priority: cost + Math.hypot(nx - gx, ny - gy) });
+    }
+  }
+  return [];
+}
+function followRoute(
+  w: World,
+  e: Entity,
+  x: number,
+  y: number,
+  goal: RoutePoint,
+  mode: 'land' | 'water',
+  speed: number,
+  dt: number,
+) {
+  let cache = routeCache.get(w);
+  if (!cache) {
+    cache = new Map();
+    routeCache.set(w, cache);
+  }
+  const key = goal.x.toFixed(1) + ':' + goal.y.toFixed(1),
+    old = cache.get(e.id);
+  let route = old;
+  const next = route?.points[route.index];
+  const valid = (p: RoutePoint) =>
+    mode === 'land'
+      ? heightAt(w, p.x, p.y) > 0.105
+      : heightAt(w, p.x, p.y) < seaLevel(w) - 0.025;
+  if (
+    !route ||
+    route.revision !== w.revision ||
+    route.goal !== key ||
+    (next && !valid(next))
+  ) {
+    route = {
+      revision: w.revision,
+      goal: key,
+      points: findRoute(w, { x, y }, goal, mode),
+      index: 0,
+    };
+    cache.set(e.id, route);
+  }
+  if (!route.points.length)
+    return { x, y, moving: false, arrived: false, blocked: true };
+  let budget = speed * dt,
+    moving = false;
+  while (route.index < route.points.length && budget > 0) {
+    const p = route.points[route.index],
+      dx = p.x - x,
+      dy = p.y - y,
+      d = Math.hypot(dx, dy);
+    if (d < 0.1) {
+      route.index++;
+      continue;
+    }
+    const step = Math.min(d, budget),
+      nx = x + (dx / d) * step,
+      ny = y + (dy / d) * step;
+    if (!valid({ x: nx, y: ny })) {
+      cache.delete(e.id);
+      return { x, y, moving: false, arrived: false, blocked: true };
+    }
+    x = nx;
+    y = ny;
+    budget -= step;
+    moving = true;
+    e.angle = Math.atan2(dy, dx);
+    if (step >= d - 0.001) route.index++;
+  }
+  return {
+    x,
+    y,
+    moving,
+    arrived: route.index >= route.points.length,
+    blocked: false,
+  };
+}
+function selectResidentGoal(
+  w: World,
+  e: Entity,
+  purpose: 'shore' | 'shade' | 'visit' | 'home',
+) {
+  e.schedule = purpose;
+  let goal: RoutePoint = { x: e.x, y: e.y + 5 };
+  if (purpose === 'shade') {
+    const candidates = w.entities
+      .filter(
+        (t) =>
+          t.kind === 'tree' &&
+          t.age >= 95 &&
+          Math.hypot(t.x - e.x, t.y - e.y) < 190,
+      )
+      .sort(
+        (a, b) =>
+          Math.hypot(a.x - e.targetX, a.y - e.targetY) -
+          Math.hypot(b.x - e.targetX, b.y - e.targetY),
+      );
+    const tree =
+      candidates[Math.floor(random(w) * Math.min(3, candidates.length))];
+    if (tree) goal = { x: tree.x + 5, y: tree.y + 5 };
+    else purpose = 'shore';
+  }
+  if (purpose === 'visit') {
+    const homes = w.entities.filter(
+      (t) =>
+        t.kind === 'home' &&
+        t.id !== e.id &&
+        Math.hypot(t.x - e.x, t.y - e.y) < 260,
+    );
+    const home = homes[Math.floor(random(w) * homes.length)];
+    if (home) goal = { x: home.x, y: home.y + 9 };
+    else purpose = 'shore';
+  }
+  if (purpose === 'shore') {
+    let candidate: RoutePoint | null = null;
+    for (let r = 24; r <= 220 && !candidate; r += 12)
+      for (let n = 0; n < 32; n++) {
+        const a = (n / 32) * Math.PI * 2 + e.variant * 0.2,
+          x = e.x + Math.cos(a) * r,
+          y = e.y + Math.sin(a) * r,
+          h = heightAt(w, x, y);
+        if (h > 0.108 && h < 0.15) {
+          candidate = { x, y };
+          break;
+        }
+      }
+    if (candidate) goal = candidate;
+    else purpose = 'shade';
+  }
+  if (heightAt(w, goal.x, goal.y) < 0.105) goal = { x: e.x, y: e.y };
+  e.goalX = goal.x;
+  e.goalY = goal.y;
+  e.purpose = purpose;
+  e.activity = 'walking';
+  e.rest = 0;
+  routeCache.get(w)?.delete(e.id);
+}
+function stepResident(w: World, e: Entity, night: boolean, dt: number) {
+  e.motion = 0;
+  const mustReturn = night || w.weather === 'rain';
+  const desired = mustReturn
+    ? 'home'
+    : hour(w) < 11
+      ? 'shore'
+      : hour(w) < 15
+        ? 'shade'
+        : 'visit';
+  if (e.schedule !== desired || e.goalX === undefined || e.goalY === undefined)
+    selectResidentGoal(w, e, desired);
+  if (e.activity === 'indoors' && mustReturn) return;
+  if (e.rest > 0) {
+    e.rest = Math.max(0, e.rest - dt);
+    e.activity = 'resting';
+    return;
+  }
+  if (e.activity === 'resting') selectResidentGoal(w, e, desired);
+  const result = followRoute(
+    w,
+    e,
+    e.targetX,
+    e.targetY,
+    { x: e.goalX!, y: e.goalY! },
+    'land',
+    mustReturn ? 7 : 5,
+    dt,
+  );
+  e.targetX = result.x;
+  e.targetY = result.y;
+  e.motion = result.moving ? 1 : 0;
+  if (result.arrived) {
+    e.motion = 0;
+    e.activity = mustReturn ? 'indoors' : 'resting';
+    e.rest = mustReturn ? 0 : 10 + random(w) * 16;
+    if (
+      !mustReturn &&
+      e.purpose === 'shade' &&
+      !w.logs.some((l) => l.text === '有人在树荫里，借了一会儿凉。')
+    )
+      log(w, '有人在树荫里，借了一会儿凉。', 'life');
+    if (
+      !mustReturn &&
+      e.purpose === 'shore' &&
+      !w.logs.some((l) => l.text === '有人走到岸边，停下来听了一会儿潮声。')
+    )
+      log(w, '有人走到岸边，停下来听了一会儿潮声。', 'life');
+  } else if (result.blocked) {
+    e.activity = 'resting';
+    e.rest = 6;
+    if (mustReturn) e.purpose = 'home';
+    else delete e.purpose;
+  }
+  if (heightAt(w, e.targetX, e.targetY) < 0.105) {
+    e.targetX = e.x;
+    e.targetY = e.y;
+    e.activity = 'indoors';
+    delete e.goalX;
+  }
+}
+function stepVoyage(w: World, e: Entity, dt: number): boolean {
+  const harbors = getHarbors(w);
+  if (!harbors.length) return false;
+  e.motion = 0;
+  if (e.rest > 0) {
+    e.rest = Math.max(0, e.rest - dt);
+    e.activity = 'moored';
+    return true;
+  }
+  if (
+    e.goalX === undefined ||
+    e.goalY === undefined ||
+    e.activity === 'moored'
+  ) {
+    const sorted = harbors
+      .filter((h) => Math.hypot(h.x - e.x, h.y - e.y) > 18)
+      .sort(
+        (a, b) =>
+          Math.hypot(a.x - e.x, a.y - e.y) - Math.hypot(b.x - e.x, b.y - e.y),
+      );
+    const dest = sorted[Math.floor(random(w) * Math.min(2, sorted.length))];
+    if (!dest) return false;
+    e.goalX = dest.x;
+    e.goalY = dest.y;
+    e.destination = dest.homeId;
+    e.activity = 'sailing';
+    routeCache.get(w)?.delete(e.id);
+  }
+  const distance = Math.hypot(e.goalX - e.x, e.goalY - e.y),
+    speed =
+      (w.weather === 'rain' ? 3.5 : 7) *
+      Math.max(0.35, Math.min(1, distance / 30));
+  const result = followRoute(
+    w,
+    e,
+    e.x,
+    e.y,
+    { x: e.goalX, y: e.goalY },
+    'water',
+    speed,
+    dt,
+  );
+  e.x = result.x;
+  e.y = result.y;
+  e.motion = result.moving ? speed : 0;
+  if (result.arrived) {
+    e.motion = 0;
+    e.rest = 25 + random(w) * 30;
+    e.activity = 'moored';
+    log(w, '小船抵达了另一处岸边，收起了帆。', 'life');
+  } else if (result.blocked) {
+    e.activity = 'moored';
+    e.rest = 8;
+    delete e.goalX;
+    delete e.goalY;
+  }
+  return true;
 }

@@ -26,6 +26,7 @@ import {
 } from './world';
 import { Renderer, type View } from './renderer';
 import { SeaAudio } from './audio';
+import { Renderer3D } from './renderer3d';
 const STORAGE_KEY = 'chaosheng.world.v1';
 export const TOOL_IDS: Tool[] = [
   'look',
@@ -53,6 +54,7 @@ type Drag = {
   startX: number;
   startY: number;
   pan: boolean;
+  orbit?: boolean;
   tool: Tool;
   before: Stats;
   snapshot: string;
@@ -63,7 +65,7 @@ type Drag = {
 export function useWorld() {
   const canvas = useRef<HTMLCanvasElement>(null),
     world = useRef<World | null>(null),
-    renderer = useRef<Renderer | null>(null),
+    renderer = useRef<Renderer | Renderer3D | null>(null),
     audio = useRef<SeaAudio | null>(null);
   const view = useRef<View>({
     zoom: 1,
@@ -76,6 +78,8 @@ export function useWorld() {
     radius: 55,
     labels: true,
     reducedMotion: false,
+    yaw: 0.12,
+    pitch: 0.91,
   });
   const options = useRef({
     paused: false,
@@ -89,6 +93,7 @@ export function useWorld() {
     pinch = useRef<{ distance: number; zoom: number } | null>(null),
     history = useRef<string[]>([]),
     future = useRef<string[]>([]);
+  const [is3D, setIs3D] = useState(false);
   const [ready, setReady] = useState(false),
     [tool, setTool] = useState<Tool>('look'),
     [paused, setPaused] = useState(false),
@@ -270,7 +275,7 @@ export function useWorld() {
                 detail:
                   w.weather === 'rain'
                     ? '窗里亮着灯，主人正在等雨停。'
-                    : '一间小屋，一位喜欢沿海散步的岛民。',
+                    : '岛民会去海岸听潮、中午在树荫休息，傍晚拜访邻居。',
               }
             : e.kind === 'boat'
               ? {
@@ -278,7 +283,7 @@ export function useWorld() {
                   detail:
                     e.rest > 0
                       ? '暂时在这里歇一会儿。'
-                      : '正在水路上漫游。新出现的岸线会让它转向。',
+                      : '正在前往下一处码头。靠岸后会收帆停留，退潮时会重新寻找水路。',
                 }
               : {
                   title: '一盏小灯',
@@ -355,7 +360,7 @@ export function useWorld() {
     pinch.current = null;
   }
   function pointerDown(e: React.PointerEvent<HTMLCanvasElement>) {
-    if (!world.current || !renderer.current || e.button === 2) return;
+    if (!world.current || !renderer.current) return;
     e.currentTarget.focus({ preventScroll: true });
     e.currentTarget.setPointerCapture(e.pointerId);
     pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
@@ -371,13 +376,19 @@ export function useWorld() {
     if (pointers.current.size > 2) return;
     const p = screenPoint(e.clientX, e.clientY);
     view.current.pointer = p;
-    const pan = view.current.tool === 'look' || e.button === 1 || e.shiftKey;
+    const pan =
+      view.current.tool === 'look' ||
+      e.button === 1 ||
+      e.shiftKey ||
+      e.button === 2 ||
+      e.altKey;
     drag.current = {
       lastX: e.clientX,
       lastY: e.clientY,
       startX: e.clientX,
       startY: e.clientY,
       pan,
+      orbit: e.button === 2 || e.altKey,
       tool: view.current.tool,
       before: statistics(world.current),
       snapshot: pan ? '' : serialize(world.current),
@@ -404,17 +415,22 @@ export function useWorld() {
     const d = drag.current;
     if (!d) return;
     if (d.pan) {
-      const s = renderer.current.scale(view.current);
-      view.current.x = clamp(
-        view.current.x + (e.clientX - d.lastX) / s,
-        -WIDTH * 0.75,
-        WIDTH * 0.75,
-      );
-      view.current.y = clamp(
-        view.current.y + (e.clientY - d.lastY) / s,
-        -HEIGHT * 0.75,
-        HEIGHT * 0.75,
-      );
+      if (d.orbit && renderer.current.is3D) {
+        view.current.yaw =
+          (view.current.yaw ?? 0.12) - (e.clientX - d.lastX) * 0.006;
+        view.current.pitch = clamp(
+          (view.current.pitch ?? 0.91) + (e.clientY - d.lastY) * 0.004,
+          0.38,
+          1.4,
+        );
+      } else
+        renderer.current.pan(
+          e.clientX - d.lastX,
+          e.clientY - d.lastY,
+          view.current,
+        );
+      view.current.x = clamp(view.current.x, -WIDTH * 0.75, WIDTH * 0.75);
+      view.current.y = clamp(view.current.y, -HEIGHT * 0.75, HEIGHT * 0.75);
     } else if (['land', 'water', 'tree'].includes(d.tool)) {
       const dist = Math.hypot(p.x - d.paintX, p.y - d.paintY);
       if (dist > view.current.radius * 0.6 && d.tool !== 'tree') {
@@ -536,7 +552,17 @@ export function useWorld() {
     ).matches;
     options.current.paused = view.current.reducedMotion;
     setPaused(options.current.paused);
-    renderer.current = new Renderer(canvas.current!);
+    const probe = document.createElement('canvas');
+    const context = probe.getContext('webgl2');
+    if (context) {
+      context.getExtension('WEBGL_lose_context')?.loseContext();
+      renderer.current = new Renderer3D(canvas.current!);
+      setIs3D(true);
+    } else {
+      renderer.current = new Renderer(canvas.current!);
+      notify('这台设备使用平面海图模式，世界仍可以正常游玩。');
+    }
+
     audio.current = new SeaAudio();
     const observer = new ResizeObserver(([e]) => {
       view.current.width = e.contentRect.width;
@@ -562,7 +588,7 @@ export function useWorld() {
         renderer.current?.draw(
           w,
           view.current,
-          view.current.reducedMotion ? 0 : w.elapsed,
+          view.current.reducedMotion ? 0 : w.elapsed + w.tickAccumulator,
         );
         if (t - lastUi.current > 350) {
           sync();
@@ -681,9 +707,21 @@ export function useWorld() {
       window.removeEventListener('pagehide', save);
       document.removeEventListener('visibilitychange', visibility);
       audio.current?.destroy();
+      renderer.current?.destroy();
     };
   }, []);
+  function turnCamera() {
+    view.current.yaw = (view.current.yaw ?? 0.12) + Math.PI / 4;
+    sync();
+  }
+  function tiltCamera() {
+    view.current.pitch = (view.current.pitch ?? 0.91) > 0.95 ? 0.58 : 1.25;
+    sync();
+  }
   return {
+    is3D,
+    turnCamera,
+    tiltCamera,
     canvas,
     world,
     view,
