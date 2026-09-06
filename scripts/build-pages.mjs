@@ -8,7 +8,7 @@ const env = {
   GITHUB_PAGES: 'true',
   NEXT_PUBLIC_BASE_PATH:
     process.env.NEXT_PUBLIC_BASE_PATH || '/chaosheng-world',
-  PAGES_ORIGIN: process.env.PAGES_ORIGIN || 'https://corzfree.github.io',
+  PAGES_ORIGIN: process.env.PAGES_ORIGIN || 'https://corzfree.cn',
 };
 if (!/^\/[A-Za-z0-9._-]+$/.test(env.NEXT_PUBLIC_BASE_PATH)) {
   throw new Error('NEXT_PUBLIC_BASE_PATH must be one repository path.');

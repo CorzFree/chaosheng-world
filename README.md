@@ -32,7 +32,9 @@ lib/world.ts 是纯模拟模型，lib/renderer.ts 是 Canvas 海图，lib/use-wo
 
 ## GitHub Pages
 
-在线游玩：https://corzfree.github.io/chaosheng-world/
+在线游玩：https://corzfree.cn/chaosheng-world/
+
+GitHub Pages 入口：https://corzfree.github.io/chaosheng-world/ （跳转到账号已绑定的域名）
 
 推送 main 分支后，GitHub Actions 会检查类型、运行模型测试，并自动发布纯静态版本。Pages 的发布来源选择 GitHub Actions。
 

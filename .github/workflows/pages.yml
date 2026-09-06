@@ -24,8 +24,12 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - uses: actions/configure-pages@v5
+        id: pages
       - name: Build the static archipelago
         run: npm run build:pages
+        env:
+          NEXT_PUBLIC_BASE_PATH: ${{ steps.pages.outputs.base_path }}
+          PAGES_ORIGIN: ${{ steps.pages.outputs.origin }}
       - uses: actions/upload-pages-artifact@v4
         with:
           path: dist/client
