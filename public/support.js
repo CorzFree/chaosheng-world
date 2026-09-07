@@ -1,0 +1,1 @@
+document.getElementById('clear-records')?.addEventListener('click',()=>{if(window.YuanfangHost){window.YuanfangHost.postMessage(JSON.stringify({action:'clear'}));}else{document.getElementById('clear-help').textContent='请在 Android App 内操作，或使用 Android 系统设置清除本应用的存储。';}});
